@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { MasterRecord, CollegeAddressRecord, LetterSettings, FacultyUser, ArchivedSession } from '../types';
 import { FACULTIES, SUBJECT_CONFIG } from '../constants';
-import { Upload, Database, CheckCircle, AlertCircle, FileSpreadsheet, MapPin, Settings, Save, Users, Lock, Archive, RefreshCw, Eye, PenTool, CheckSquare, Square, CloudUpload, Mail } from 'lucide-react';
+import { Upload, Database, CheckCircle, AlertCircle, FileSpreadsheet, MapPin, Settings, Save, Users, Lock, Archive, RefreshCw, Eye, PenTool, CheckSquare, Square, UploadCloud, Mail } from 'lucide-react';
 import { 
     uploadMasterRecordsBatch, 
     uploadAddressesBatch, 
@@ -324,7 +324,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 {/* Upload Area */}
                 <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 flex flex-col items-center justify-center text-center hover:bg-gray-50 transition-colors">
-                    <CloudUpload size={48} className="text-blue-600 mb-4" />
+                    <UploadCloud size={48} className="text-blue-600 mb-4" />
                     <label className="cursor-pointer">
                         <span className="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors inline-block mb-2">
                             Select Master Excel
@@ -345,7 +345,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                         {loading && (
                             <div className="mt-4">
                                 <div className="flex items-center gap-2 text-blue-600 text-sm mb-1">
-                                    <CloudUpload className="animate-bounce" size={16} /> 
+                                    <UploadCloud className="animate-bounce" size={16} /> 
                                     <span>Uploading to Cloud... {uploadProgress}%</span>
                                 </div>
                                 <div className="w-full bg-gray-200 rounded-full h-2.5">
@@ -393,7 +393,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                          {loading && (
                             <div className="mt-4">
                                 <div className="flex items-center gap-2 text-blue-600 text-sm mb-1">
-                                    <CloudUpload className="animate-bounce" size={16} /> 
+                                    <UploadCloud className="animate-bounce" size={16} /> 
                                     <span>Uploading to Cloud... {uploadProgress}%</span>
                                 </div>
                                 <div className="w-full bg-gray-200 rounded-full h-2.5">
