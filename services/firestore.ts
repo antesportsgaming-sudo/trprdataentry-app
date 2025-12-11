@@ -1,4 +1,5 @@
 
+
 import { db } from '../firebase';
 import { 
     collection, 
@@ -24,6 +25,27 @@ const isOfflineError = (error: any) => {
     const msg = error?.message || '';
     const code = error?.code || '';
     return msg.includes('offline') || code.includes('unavailable');
+};
+
+// Helper for High-Speed Concurrency (Pool Pattern)
+const processInPool = async <T>(
+    items: T[], 
+    concurrency: number, 
+    processItem: (item: T) => Promise<void>
+) => {
+    const queue = [...items];
+    const workers = [];
+    const workerCount = Math.min(concurrency, items.length);
+
+    for (let i = 0; i < workerCount; i++) {
+        workers.push((async () => {
+            while (queue.length > 0) {
+                const item = queue.shift();
+                if (item) await processItem(item);
+            }
+        })());
+    }
+    await Promise.all(workers);
 };
 
 // --- Global/Settings Operations ---
@@ -136,48 +158,61 @@ const chunkArray = <T>(array: T[], size: number): T[][] => {
     return chunked_arr;
 };
 
+// Helper to clean document IDs for Firestore
+// Firestore IDs cannot contain / . # $ [ ]
+const sanitizeDocId = (id: string): string => {
+    return id.replace(/[.\/#$\[\]\\]/g, '_').trim();
+};
+
 export const uploadMasterRecordsBatch = async (
     facultyId: string, 
     records: MasterRecord[],
     onProgress?: (processed: number, total: number) => void
 ) => {
     const collectionRef = collection(db, FACULTY_COLLECTION, facultyId, 'master_records');
-    // BATCH SIZE Optimized to 250 for reliable high-speed uploads
-    const BATCH_SIZE = 250;
+    // Using Max Batch Size (500)
+    const BATCH_SIZE = 500;
     const chunks = chunkArray(records, BATCH_SIZE);
     
-    console.log(`Starting upload of ${records.length} records in ${chunks.length} chunks...`);
+    console.log(`Starting SUPER-FAST upload of ${records.length} records in ${chunks.length} chunks...`);
 
     let processedCount = 0;
 
     // Helper to upload a single chunk
     const processChunk = async (chunk: MasterRecord[]) => {
         const batch = writeBatch(db);
+        let batchHasOps = false;
+
         chunk.forEach(record => {
-            // FIX: Robust Sanitization. Ensure string, replace / and \ with _, trim.
             const rawSeatNo = String(record.seatNo || '');
-            const safeId = rawSeatNo.replace(/[\/\\]/g, '_').trim();
+            const safeId = sanitizeDocId(rawSeatNo);
             
-            if (safeId) {
+            if (safeId && safeId.length > 0) {
                 const docRef = doc(collectionRef, safeId); 
                 batch.set(docRef, record);
+                batchHasOps = true;
             }
         });
-        await batch.commit();
+
+        if (batchHasOps) {
+            try {
+                await batch.commit();
+            } catch (e) {
+                console.error("Batch commit failed:", e);
+                // Retrying once might be useful in poor networks, but keep it simple for speed
+                throw e;
+            }
+        }
+        
         processedCount += chunk.length;
         if (onProgress) {
             onProgress(Math.min(processedCount, records.length), records.length);
         }
     };
 
-    // Parallel Processing with Concurrency Limit
-    // Processing 5 batches concurrently significantly speeds up upload
-    const CONCURRENCY_LIMIT = 5;
-    
-    for (let i = 0; i < chunks.length; i += CONCURRENCY_LIMIT) {
-        const batchGroup = chunks.slice(i, i + CONCURRENCY_LIMIT);
-        await Promise.all(batchGroup.map(chunk => processChunk(chunk)));
-    }
+    // PERFORMANCE UPGRADE: High Concurrency (25 Parallel Batches)
+    const CONCURRENCY_LIMIT = 25;
+    await processInPool(chunks, CONCURRENCY_LIMIT, processChunk);
 };
 
 export const fetchMasterRecordsDB = async (facultyId: string): Promise<MasterRecord[]> => {
@@ -197,34 +232,36 @@ export const uploadAddressesBatch = async (
     onProgress?: (processed: number, total: number) => void
 ) => {
     const collectionRef = collection(db, FACULTY_COLLECTION, facultyId, 'college_addresses');
-    const BATCH_SIZE = 250;
+    const BATCH_SIZE = 500;
     const chunks = chunkArray(records, BATCH_SIZE);
     
     let processedCount = 0;
 
     const processChunk = async (chunk: CollegeAddressRecord[]) => {
         const batch = writeBatch(db);
+        let batchHasOps = false;
+
         chunk.forEach(record => {
-            // FIX: Sanitize Code
             const rawCode = String(record.collegeCode || '');
-            const safeId = rawCode.replace(/[\/\\]/g, '_').trim();
-            if (safeId) {
+            const safeId = sanitizeDocId(rawCode);
+            if (safeId && safeId.length > 0) {
                 const docRef = doc(collectionRef, safeId);
                 batch.set(docRef, record);
+                batchHasOps = true;
             }
         });
-        await batch.commit();
+
+        if (batchHasOps) {
+             await batch.commit();
+        }
         processedCount += chunk.length;
         if (onProgress) {
             onProgress(Math.min(processedCount, records.length), records.length);
         }
     };
 
-    const CONCURRENCY_LIMIT = 5;
-    for (let i = 0; i < chunks.length; i += CONCURRENCY_LIMIT) {
-        const batchGroup = chunks.slice(i, i + CONCURRENCY_LIMIT);
-        await Promise.all(batchGroup.map(chunk => processChunk(chunk)));
-    }
+    // High Concurrency
+    await processInPool(chunks, 25, processChunk);
 };
 
 export const fetchAddressesDB = async (facultyId: string): Promise<CollegeAddressRecord[]> => {
@@ -236,6 +273,47 @@ export const fetchAddressesDB = async (facultyId: string): Promise<CollegeAddres
         if (!isOfflineError(error)) console.warn("Error fetching addresses:", error);
         return [];
     }
+};
+
+// --- JSON Restore / Backup ---
+
+export const fetchAllStudentsForBackup = async (facultyId: string): Promise<StudentEntry[]> => {
+     try {
+        const studentsRef = collection(db, FACULTY_COLLECTION, facultyId, 'students');
+        const snapshot = await getDocs(studentsRef);
+        return snapshot.docs.map(doc => doc.data() as StudentEntry);
+     } catch (error) {
+         console.error("Backup Fetch Error", error);
+         throw error;
+     }
+}
+
+export const restoreBackupBatch = async (
+    facultyId: string, 
+    students: StudentEntry[],
+    onProgress?: (processed: number, total: number) => void
+) => {
+    const collectionRef = collection(db, FACULTY_COLLECTION, facultyId, 'students');
+    const BATCH_SIZE = 500; 
+    const chunks = chunkArray(students, BATCH_SIZE);
+    
+    let processedCount = 0;
+
+    const processChunk = async (chunk: StudentEntry[]) => {
+        const batch = writeBatch(db);
+        chunk.forEach(record => {
+            // Ensure ID exists
+            if (!record.id) record.id = crypto.randomUUID();
+            const docRef = doc(collectionRef, record.id);
+            batch.set(docRef, record);
+        });
+        await batch.commit();
+        processedCount += chunk.length;
+        if (onProgress) onProgress(processedCount, students.length);
+    };
+
+    // Very High Concurrency for Restore (25)
+    await processInPool(chunks, 25, processChunk);
 };
 
 // --- Archives ---
@@ -258,13 +336,18 @@ export const archiveCurrentSession = async (facultyId: string, archiveData: Arch
         const studentsRef = collection(db, FACULTY_COLLECTION, facultyId, 'students');
         const snapshot = await getDocs(studentsRef);
         
-        const deleteChunks = chunkArray(snapshot.docs, 250);
-        for (const chunk of deleteChunks) {
-            const delBatch = writeBatch(db);
-            // Fix: Cast 'd' to any to access 'ref' property safely if types mismatch
-            chunk.forEach((d: any) => delBatch.delete(d.ref));
-            await delBatch.commit();
-        }
+        // Fast Deletion
+        const BATCH_SIZE = 500;
+        const chunks = chunkArray(snapshot.docs, BATCH_SIZE);
+        
+        const processDeleteChunk = async (chunk: any[]) => {
+             const delBatch = writeBatch(db);
+             chunk.forEach((d) => delBatch.delete(d.ref));
+             await delBatch.commit();
+        };
+
+        await processInPool(chunks, 25, processDeleteChunk);
+
     } catch (error) {
         console.error("Error clearing students for archive:", error);
         // Continue flow, data is at least archived.
