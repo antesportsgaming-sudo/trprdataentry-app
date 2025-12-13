@@ -383,6 +383,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                 const workbook = XLSX.read(data, { type: 'array' });
                 const sheetName = workbook.SheetNames[0];
                 const sheet = workbook.Sheets[sheetName];
+
+                // 🔑 UI repaint allow
+                await new Promise(r => setTimeout(r, 0));
+
                 const jsonData = XLSX.utils.sheet_to_json(sheet);
 
                 if (!jsonData || jsonData.length === 0) {
@@ -462,6 +466,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
             const workbook = XLSX.read(data, { type: 'array' });
             const sheetName = workbook.SheetNames[0];
             const sheet = workbook.Sheets[sheetName];
+
+            // 🔑 UI repaint allow
+            await new Promise(r => setTimeout(r, 0));
+
             const jsonData = XLSX.utils.sheet_to_json(sheet);
             
             // Normalize Data with stricter safe check
@@ -585,6 +593,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                   const workbook = XLSX.read(data, { type: 'array' });
                   const sheetName = workbook.SheetNames[0];
                   const sheet = workbook.Sheets[sheetName];
+
+                  // 🔑 UI repaint allow
+                  await new Promise(r => setTimeout(r, 0));
+
                   const jsonData = XLSX.utils.sheet_to_json(sheet);
                   
                   const normalizedData: CollegeAddressRecord[] = jsonData.map((row: any) => ({
