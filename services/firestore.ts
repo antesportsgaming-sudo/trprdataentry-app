@@ -275,44 +275,47 @@ export const fetchAddressesDB = async (facultyId: string): Promise<CollegeAddres
 };
 
 export const uploadAddressesBatch = async (
-    facultyId: string, 
-    records: CollegeAddressRecord[],
-    onProgress?: (processed: number, total: number) => void
+  facultyId: string,
+  records: CollegeAddressRecord[],
+  onProgress?: (processed: number, total: number) => void
 ) => {
-    if (onProgress) onProgress(0, records.length);
+  if (onProgress) onProgress(0, records.length);
 
-    const collectionRef = collection(db, FACULTY_COLLECTION, facultyId, 'college_addresses');
-    const BATCH_SIZE = 50; 
-    const chunks = chunkArray(records, BATCH_SIZE);
-    
-    let processedCount = 0;
+  const collectionRef = collection(db, FACULTY_COLLECTION, facultyId, 'college_addresses');
+  const BATCH_SIZE = 50;
+  const chunks = chunkArray(records, BATCH_SIZE);
 
-    const processChunk = async (chunk: CollegeAddressRecord[]) => {
-        const batch = writeBatch(db);
-        let batchHasOps = false;
+  let processedCount = 0;
 
-        chunk.forEach(record => {
-            const rawCode = String(record.collegeCode || '');
-            const safeId = sanitizeDocId(rawCode);
-            if (safeId && safeId.length > 0) {
-                const docRef = doc(collectionRef, safeId);
-                // USE MERGE: TRUE to preserve existing data if only updating partial fields
-                batch.set(docRef, record, { merge: true });
-                batchHasOps = true;
-            }
-        });
+  for (const chunk of chunks) {
+    const batch = writeBatch(db);
 
-        if (batchHasOps) {
-             await batch.commit();
-        }
-        processedCount += chunk.length;
-        if (onProgress) {
-            onProgress(Math.min(processedCount, records.length), records.length);
-        }
-    };
-    
-    const CONCURRENCY_LIMIT = 5;
-    await processInPool(chunks, CONCURRENCY_LIMIT, processChunk);
+    chunk.forEach(record => {
+      const rawCode = String(record.collegeCode || '');
+      const safeId = sanitizeDocId(rawCode);
+
+      if (safeId && safeId.length > 0) {
+        batch.set(
+          doc(collectionRef, safeId),
+          record,
+          { merge: true }
+        );
+      }
+    });
+
+    await batch.commit();
+
+    processedCount += chunk.length;
+
+    if (onProgress) {
+      onProgress(
+        Math.min(processedCount, records.length),
+        records.length
+      );
+      // ⬇️ UI ला repaint ची chance
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
 };
 
 // --- Archive Operations ---
@@ -362,34 +365,40 @@ export const fetchAllStudentsForBackup = async (facultyId: string) => {
 };
 
 export const restoreBackupBatch = async (
-    facultyId: string, 
-    students: any[], 
-    onProgress?: (processed: number, total: number) => void
+  facultyId: string,
+  students: any[],
+  onProgress?: (processed: number, total: number) => void
 ) => {
-    if (onProgress) onProgress(0, students.length);
+  if (onProgress) onProgress(0, students.length);
 
-    const collectionRef = collection(db, FACULTY_COLLECTION, facultyId, 'students');
-    const BATCH_SIZE = 50;
-    const chunks = chunkArray(students, BATCH_SIZE);
-    
-    let processedCount = 0;
+  const collectionRef = collection(db, FACULTY_COLLECTION, facultyId, 'students');
+  const BATCH_SIZE = 50;
+  const chunks = chunkArray(students, BATCH_SIZE);
 
-    const processChunk = async (chunk: any[]) => {
-        const batch = writeBatch(db);
-        chunk.forEach(student => {
-             // Ensure ID exists
-             const id = student.id || crypto.randomUUID();
-             const docRef = doc(collectionRef, id);
-             batch.set(docRef, { ...student, id });
-        });
-        await batch.commit();
-        
-        processedCount += chunk.length;
-        if (onProgress) {
-            onProgress(Math.min(processedCount, students.length), students.length);
-        }
-    };
+  let processedCount = 0;
 
-    const CONCURRENCY_LIMIT = 5;
-    await processInPool(chunks, CONCURRENCY_LIMIT, processChunk);
+  for (const chunk of chunks) {
+    const batch = writeBatch(db);
+
+    chunk.forEach(student => {
+      const id = student.id || crypto.randomUUID();
+      batch.set(
+        doc(collectionRef, id),
+        { ...student, id }
+      );
+    });
+
+    await batch.commit();
+
+    processedCount += chunk.length;
+
+    if (onProgress) {
+      onProgress(
+        Math.min(processedCount, students.length),
+        students.length
+      );
+      // ⬇️ UI repaint allow
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
 };
