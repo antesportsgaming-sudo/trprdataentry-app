@@ -7,7 +7,7 @@ import { Upload, Database, CheckCircle, AlertCircle, FileSpreadsheet, MapPin, Se
 import { 
     uploadMasterRecordsBatch, 
     uploadAddressesBatch, 
-    fetchAccessConfig,
+    fetchAccessConfig, 
     saveAccessConfig,
     fetchAllStudentsForBackup,
     restoreBackupBatch
@@ -113,7 +113,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const handleTabChange = (tab: 'MASTER' | 'ADDRESS' | 'SETTINGS' | 'ACCESS' | 'SESSION') => {
     setActiveTab(tab);
-    resetStatus();
+    // 🔑 IMPORTANT: Only reset status if NOT currently loading.
+    // This allows the upload to continue in background even if tab changes.
+    if (!loading) {
+        resetStatus();
+    }
   };
 
   const handleSettingsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
