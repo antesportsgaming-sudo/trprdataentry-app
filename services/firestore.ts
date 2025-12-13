@@ -197,59 +197,46 @@ const sanitizeDocId = (id: string): string => {
 };
 
 export const uploadMasterRecordsBatch = async (
-    facultyId: string, 
-    records: MasterRecord[],
-    onProgress?: (processed: number, total: number) => void
+  facultyId: string,
+  records: MasterRecord[],
+  onProgress?: (processed: number, total: number) => void
 ) => {
-    // Force initial progress update to ensure UI shows correct total immediately
+  if (onProgress) onProgress(0, records.length);
+
+  const collectionRef = collection(db, FACULTY_COLLECTION, facultyId, 'master_records');
+  const BATCH_SIZE = 300;
+  const chunks = chunkArray(records, BATCH_SIZE);
+
+  let processedCount = 0;
+
+  for (const chunk of chunks) {
+    const batch = writeBatch(db);
+
+    chunk.forEach(record => {
+      const rawSeatNo = String(record.seatNo || '');
+      const safeId = sanitizeDocId(rawSeatNo);
+
+      if (safeId) {
+        batch.set(
+          doc(collectionRef, safeId),
+          record
+        );
+      }
+    });
+
+    await batch.commit();
+
+    processedCount += chunk.length;
+
     if (onProgress) {
-        onProgress(0, records.length);
+      onProgress(
+        Math.min(processedCount, records.length),
+        records.length
+      );
+      // 🔑 React UI repaint allow
+      await new Promise(r => setTimeout(r, 0));
     }
-
-    const collectionRef = collection(db, FACULTY_COLLECTION, facultyId, 'master_records');
-    
-    // Adjusted batch size and concurrency for better UI responsiveness and stability
-    const BATCH_SIZE = 50; 
-    const chunks = chunkArray(records, BATCH_SIZE);
-    
-    console.log(`Starting upload of ${records.length} records in ${chunks.length} chunks...`);
-
-    let processedCount = 0;
-
-    // Helper to upload a single chunk
-    const processChunk = async (chunk: MasterRecord[]) => {
-        const batch = writeBatch(db);
-        let batchHasOps = false;
-
-        chunk.forEach(record => {
-            const rawSeatNo = String(record.seatNo || '');
-            const safeId = sanitizeDocId(rawSeatNo);
-            
-            if (safeId && safeId.length > 0) {
-                const docRef = doc(collectionRef, safeId); 
-                batch.set(docRef, record);
-                batchHasOps = true;
-            }
-        });
-
-        if (batchHasOps) {
-            try {
-                await batch.commit();
-            } catch (e) {
-                console.error("Batch commit failed:", e);
-                throw e;
-            }
-        }
-        
-        processedCount += chunk.length;
-        if (onProgress) {
-            onProgress(Math.min(processedCount, records.length), records.length);
-        }
-    };
-
-    // Reduce concurrency to 5 to prevent UI freezing and network congestion
-    const CONCURRENCY_LIMIT = 5;
-    await processInPool(chunks, CONCURRENCY_LIMIT, processChunk);
+  }
 };
 
 export const fetchMasterRecordsDB = async (facultyId: string): Promise<MasterRecord[]> => {
@@ -282,7 +269,7 @@ export const uploadAddressesBatch = async (
   if (onProgress) onProgress(0, records.length);
 
   const collectionRef = collection(db, FACULTY_COLLECTION, facultyId, 'college_addresses');
-  const BATCH_SIZE = 50;
+  const BATCH_SIZE = 300;
   const chunks = chunkArray(records, BATCH_SIZE);
 
   let processedCount = 0;
@@ -372,7 +359,7 @@ export const restoreBackupBatch = async (
   if (onProgress) onProgress(0, students.length);
 
   const collectionRef = collection(db, FACULTY_COLLECTION, facultyId, 'students');
-  const BATCH_SIZE = 50;
+  const BATCH_SIZE = 300;
   const chunks = chunkArray(students, BATCH_SIZE);
 
   let processedCount = 0;

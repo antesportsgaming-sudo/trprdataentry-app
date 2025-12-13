@@ -322,10 +322,11 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
           setEstimatedTime('Calculating...');
           setError(null);
           
+          const jsonStr = event.target?.result as string; // Capture result immediately
+
           // Use setTimeout to allow UI to render the loading state before heavy processing
           setTimeout(async () => {
               try {
-                  const jsonStr = event.target?.result as string;
                   const data = JSON.parse(jsonStr);
                   if (!Array.isArray(data)) throw new Error("Invalid JSON format. Expected an array.");
                   
@@ -380,11 +381,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
         setError(null);
         setSuccessMsg(null);
 
+        const binaryData = event.target?.result; // 🔑 CAPTURE IMMEDIATELY
+
         // Async wrapper to prevent UI freeze during parsing
         setTimeout(async () => {
             try {
-                const data = event.target?.result;
-                const workbook = XLSX.read(data, { type: 'array' });
+                if (!binaryData) throw new Error("Failed to read file");
+                
+                const workbook = XLSX.read(binaryData, { type: 'array' });
                 const sheetName = workbook.SheetNames[0];
                 const sheet = workbook.Sheets[sheetName];
 
@@ -463,11 +467,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
       setError(null);
       setSuccessMsg(null);
 
+      const binaryData = event.target?.result; // 🔑 CAPTURE IMMEDIATELY
+
       // Async wrapper
       setTimeout(async () => {
         try {
-            const data = event.target?.result;
-            const workbook = XLSX.read(data, { type: 'array' });
+            if (!binaryData) throw new Error("Failed to read file");
+
+            const workbook = XLSX.read(binaryData, { type: 'array' });
             const sheetName = workbook.SheetNames[0];
             const sheet = workbook.Sheets[sheetName];
 
@@ -590,11 +597,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
           setEstimatedTime('Calculating...');
           setError(null);
           setSuccessMsg(null);
+          
+          const binaryData = event.target?.result; // 🔑 CAPTURE IMMEDIATELY
 
           setTimeout(async () => {
               try {
-                  const data = event.target?.result;
-                  const workbook = XLSX.read(data, { type: 'array' });
+                  if (!binaryData) throw new Error("Failed to read file");
+                  
+                  const workbook = XLSX.read(binaryData, { type: 'array' });
                   const sheetName = workbook.SheetNames[0];
                   const sheet = workbook.Sheets[sheetName];
 
