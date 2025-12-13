@@ -28,6 +28,7 @@ export const isOfflineError = (error: any) => {
 };
 
 // Helper for High-Speed Concurrency (Pool Pattern)
+// This prevents the browser from freezing by limiting active requests
 const processInPool = async <T>(
     items: T[], 
     concurrency: number, 
@@ -78,7 +79,7 @@ export const saveFacultySettings = async (facultyId: string, settings: Partial<L
 
 export const saveCurrentExamConfig = async (facultyId: string, examName: string, sessionYears: string[], examList?: string[]) => {
     try {
-        const docRef = doc(db, FACULTY_COLLECTION, facultyId);
+        const docRef = doc(db, FACULTY_COLLECTION, facultyId, 'config');
         const data: any = { currentExamName: examName, sessionYears };
         if (examList) {
             data.examList = examList;
@@ -200,11 +201,15 @@ export const uploadMasterRecordsBatch = async (
     records: MasterRecord[],
     onProgress?: (processed: number, total: number) => void
 ) => {
+    // Force initial progress update to ensure UI shows correct total immediately
+    if (onProgress) {
+        onProgress(0, records.length);
+    }
+
     const collectionRef = collection(db, FACULTY_COLLECTION, facultyId, 'master_records');
     
-    // REDUCED BATCH SIZE FOR BETTER UI FEEDBACK (Live Counting)
-    // Firestore limit is 500, but 25 gives more frequent updates to the UI
-    const BATCH_SIZE = 25; 
+    // Adjusted batch size and concurrency for better UI responsiveness and stability
+    const BATCH_SIZE = 50; 
     const chunks = chunkArray(records, BATCH_SIZE);
     
     console.log(`Starting upload of ${records.length} records in ${chunks.length} chunks...`);
@@ -242,8 +247,8 @@ export const uploadMasterRecordsBatch = async (
         }
     };
 
-    // Concurrency Limit (Keep it moderate so UI updates don't lag)
-    const CONCURRENCY_LIMIT = 10;
+    // Reduce concurrency to 5 to prevent UI freezing and network congestion
+    const CONCURRENCY_LIMIT = 5;
     await processInPool(chunks, CONCURRENCY_LIMIT, processChunk);
 };
 
@@ -274,8 +279,10 @@ export const uploadAddressesBatch = async (
     records: CollegeAddressRecord[],
     onProgress?: (processed: number, total: number) => void
 ) => {
+    if (onProgress) onProgress(0, records.length);
+
     const collectionRef = collection(db, FACULTY_COLLECTION, facultyId, 'college_addresses');
-    const BATCH_SIZE = 25; // Smaller batch for better progress bar
+    const BATCH_SIZE = 50; 
     const chunks = chunkArray(records, BATCH_SIZE);
     
     let processedCount = 0;
@@ -304,7 +311,7 @@ export const uploadAddressesBatch = async (
         }
     };
     
-    const CONCURRENCY_LIMIT = 10;
+    const CONCURRENCY_LIMIT = 5;
     await processInPool(chunks, CONCURRENCY_LIMIT, processChunk);
 };
 
@@ -359,8 +366,10 @@ export const restoreBackupBatch = async (
     students: any[], 
     onProgress?: (processed: number, total: number) => void
 ) => {
+    if (onProgress) onProgress(0, students.length);
+
     const collectionRef = collection(db, FACULTY_COLLECTION, facultyId, 'students');
-    const BATCH_SIZE = 25; // Smaller batch
+    const BATCH_SIZE = 50;
     const chunks = chunkArray(students, BATCH_SIZE);
     
     let processedCount = 0;
@@ -381,6 +390,6 @@ export const restoreBackupBatch = async (
         }
     };
 
-    const CONCURRENCY_LIMIT = 10;
+    const CONCURRENCY_LIMIT = 5;
     await processInPool(chunks, CONCURRENCY_LIMIT, processChunk);
 };

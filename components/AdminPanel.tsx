@@ -76,6 +76,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   // Session State
   const [nextExamName, setNextExamName] = useState('SUMMER-2025_PHASE-IV');
 
+  // Define Admin User Check
+  const isAdminUser = currentUser.id === 'medical';
+
   // Update form if props change
   useEffect(() => {
     setSettingsForm(currentSettings);
@@ -95,7 +98,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
       if (isAdminUser) {
           loadPermissions();
       }
-  }, []);
+  }, [isAdminUser]);
 
   const resetStatus = () => {
     setLoading(false);
@@ -261,7 +264,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   const createProgressCallback = (startTime: number) => {
       return (processed: number, total: number) => {
           // 1. Update Percentage
-          const pct = Math.round((processed / total) * 100);
+          const pct = total > 0 ? Math.round((processed / total) * 100) : 0;
           setUploadProgress(pct);
           setUploadStats({ processed, total }); // LIVE COUNT UPDATE
 
@@ -555,11 +558,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
 
         } catch (err: any) {
             console.error("Paste Error:", err);
-            if (err.code === 'permission-denied') {
-                setError("Permission Error: Cannot write to Database.");
-            } else {
-                setError(`Paste Process Failed: ${err.message}`);
-            }
+             setError(`Paste Failed: ${err.message}`);
         } finally {
             setLoading(false);
         }
@@ -567,764 +566,530 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   const handleAddressFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    const inputElement = e.target;
-    if (!file) return;
+      const file = e.target.files?.[0];
+      const inputElement = e.target;
+      if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      setLoading(true);
-      setUploadProgress(0);
-      setUploadStats({ processed: 0, total: 0 });
-      setEstimatedTime('Calculating...');
-      setError(null);
-      setSuccessMsg(null);
+      const reader = new FileReader();
+      reader.onload = (event) => {
+          setLoading(true);
+          setUploadProgress(0);
+          setUploadStats({ processed: 0, total: 0 });
+          setEstimatedTime('Calculating...');
+          setError(null);
+          setSuccessMsg(null);
 
-      setTimeout(async () => {
-        try {
-            const data = event.target?.result;
-            const workbook = XLSX.read(data, { type: 'array' });
-            const sheetName = workbook.SheetNames[0];
-            const sheet = workbook.Sheets[sheetName];
-            const jsonData = XLSX.utils.sheet_to_json(sheet);
+          setTimeout(async () => {
+              try {
+                  const data = event.target?.result;
+                  const workbook = XLSX.read(data, { type: 'array' });
+                  const sheetName = workbook.SheetNames[0];
+                  const sheet = workbook.Sheets[sheetName];
+                  const jsonData = XLSX.utils.sheet_to_json(sheet);
+                  
+                  const normalizedData: CollegeAddressRecord[] = jsonData.map((row: any) => ({
+                      collegeCode: String(getFlexibleValue(row, ['College Code', 'college_code', 'code']) || '').trim(),
+                      address: String(getFlexibleValue(row, ['Address', 'address', 'addr']) || '').trim(),
+                      email: String(getFlexibleValue(row, ['Email', 'email', 'E-mail']) || '').trim()
+                  })).filter(r => r.collegeCode && r.address);
+                  
+                  if (normalizedData.length === 0) {
+                      throw new Error("No valid address records found. Need 'College Code' and 'Address'.");
+                  }
 
-            // Normalize Data for Addresses
-            // Improved flexible parsing for email
-            const normalizedData: CollegeAddressRecord[] = jsonData.map((row: any) => ({
-            collegeCode: String(getFlexibleValue(row, ['College Code', 'college_code', 'CODE', 'code', 'C_Code', 'Center Code']) || '').trim(),
-            address: String(getFlexibleValue(row, ['Address', 'address', 'College Address', 'addr', 'LOCATION', 'Coll_Address']) || '').trim(),
-            email: String(getFlexibleValue(row, ['Email', 'email', 'E-mail', 'EMAIL', 'mail', 'Email_Id', 'EmailId', 'Email ID']) || '').trim()
-            })).filter(r => r.collegeCode && (r.address || r.email));
+                  // LIVE COUNT INIT
+                  setUploadStats({ processed: 0, total: normalizedData.length });
 
-            if (normalizedData.length === 0) {
-            setError("No valid address records found. Ensure Excel has 'College Code' and 'Address'.");
-            } else {
-            // LIVE COUNT INIT
-            setUploadStats({ processed: 0, total: normalizedData.length });
-
-            // Upload to Firestore
-            const startTime = Date.now();
-            await uploadAddressesBatch(currentUser.id, normalizedData, createProgressCallback(startTime));
-
-            setPreviewData(normalizedData);
-            onAddressDataLoaded(normalizedData);
-            setSuccessMsg(`✅ DONE! Successfully synced ${normalizedData.length} address records.`);
-            }
-        } catch (err: any) {
-            console.error("Address Upload Error:", err);
-            if (err.code === 'permission-denied') {
-                setError("Permission Error: Cannot write to Database.");
-            } else {
-                setError(`Failed to upload addresses. Error: ${err.message}`);
-            }
-        } finally {
-            setLoading(false);
-            if (inputElement) inputElement.value = ''; // Reset input
-        }
-      }, 50);
-    };
-    reader.readAsArrayBuffer(file);
+                  const startTime = Date.now();
+                  await uploadAddressesBatch(currentUser.id, normalizedData, createProgressCallback(startTime));
+                  
+                  onAddressDataLoaded(normalizedData);
+                  setSuccessMsg(`✅ DONE! Updated ${normalizedData.length} addresses.`);
+              } catch (err: any) {
+                  setError(`Address Upload Failed: ${err.message}`);
+              } finally {
+                  setLoading(false);
+                  if (inputElement) inputElement.value = '';
+              }
+          }, 50);
+      };
+      reader.readAsArrayBuffer(file);
   };
 
-  const isAdminUser = currentUser.id === 'medical';
+  // --- Render Functions ---
+
+  const renderTabs = () => (
+    <div className="flex flex-wrap gap-2 mb-6 border-b border-gray-200 pb-2">
+      <button 
+        onClick={() => handleTabChange('MASTER')} 
+        className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'MASTER' ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-100'}`}
+      >
+        <Database size={16} /> Student Data
+      </button>
+      <button 
+        onClick={() => handleTabChange('ADDRESS')} 
+        className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'ADDRESS' ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-100'}`}
+      >
+        <MapPin size={16} /> College Addresses
+      </button>
+      <button 
+        onClick={() => handleTabChange('SETTINGS')} 
+        className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'SETTINGS' ? 'bg-blue-600 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-100'}`}
+      >
+        <Settings size={16} /> Configuration
+      </button>
+      <button 
+        onClick={() => handleTabChange('SESSION')} 
+        className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'SESSION' ? 'bg-purple-600 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-100'}`}
+      >
+        <Archive size={16} /> Session & Exam
+      </button>
+      {isAdminUser && (
+          <button 
+            onClick={() => handleTabChange('ACCESS')} 
+            className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${activeTab === 'ACCESS' ? 'bg-orange-600 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-100'}`}
+          >
+            <Lock size={16} /> Access Control
+          </button>
+      )}
+    </div>
+  );
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      
-      {/* Tab Navigation */}
-      <div className="flex border-b border-gray-200 bg-white rounded-t-xl overflow-hidden overflow-x-auto">
-        <button onClick={() => handleTabChange('MASTER')} className={`flex-1 py-4 px-6 text-sm font-medium flex items-center justify-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'MASTER' ? 'bg-blue-50 text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}>
-          <Database size={18} /> Student Data
-        </button>
-        <button onClick={() => handleTabChange('ADDRESS')} className={`flex-1 py-4 px-6 text-sm font-medium flex items-center justify-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'ADDRESS' ? 'bg-blue-50 text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}>
-          <MapPin size={18} /> Addresses
-        </button>
-        <button onClick={() => handleTabChange('SETTINGS')} className={`flex-1 py-4 px-6 text-sm font-medium flex items-center justify-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'SETTINGS' ? 'bg-blue-50 text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}>
-          <Settings size={18} /> Configuration
-        </button>
-        <button onClick={() => handleTabChange('SESSION')} className={`flex-1 py-4 px-6 text-sm font-medium flex items-center justify-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'SESSION' ? 'bg-blue-50 text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}>
-          <Archive size={18} /> Session / Data
-        </button>
-        {isAdminUser && (
-            <button onClick={() => handleTabChange('ACCESS')} className={`flex-1 py-4 px-6 text-sm font-medium flex items-center justify-center gap-2 transition-colors whitespace-nowrap ${activeTab === 'ACCESS' ? 'bg-blue-50 text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}>
-            <Users size={18} /> Access
-            </button>
-        )}
-      </div>
+    <div className="min-h-screen bg-gray-50/50 p-4 md:p-8">
+      <div className="max-w-7xl mx-auto">
+        <div className="flex items-center gap-3 mb-8">
+            <div className="p-3 bg-white rounded-xl shadow-sm border border-gray-200 text-blue-600">
+                <Settings size={24} />
+            </div>
+            <div>
+                <h1 className="text-2xl font-bold text-gray-800">Admin Panel</h1>
+                <p className="text-sm text-gray-500">Manage master data, settings, and system configuration</p>
+            </div>
+        </div>
 
-      <div className="bg-white p-8 rounded-b-xl shadow-md border border-gray-200 border-t-0 mt-0">
-        
-        {/* ... MASTER, ADDRESS, SETTINGS, SESSION Tabs ... (Hidden to save tokens, unchanged) */}
-        {activeTab === 'MASTER' && (
-          <>
-            <h2 className="text-xl font-bold text-gray-800 mb-2">Student Data Upload</h2>
-            <p className="text-gray-500 mb-8">
-              Upload an Excel/CSV file containing student details to enable auto-fill in the application form.
-              <span className="block text-xs text-blue-500 mt-1 font-semibold">NOTE: Data is saved to Cloud Database.</span>
-            </p>
+        {renderTabs()}
+
+        {/* Status Messages */}
+        {loading && (
+          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg flex flex-col gap-2">
+            <div className="flex items-center gap-2 text-blue-700 font-medium">
+                <RefreshCw className="animate-spin" size={20} />
+                Processing Request... {estimatedTime && <span className="text-sm bg-blue-200 px-2 py-0.5 rounded-full text-blue-800">{estimatedTime}</span>}
+            </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {/* Upload Column with 2 Options */}
-                <div className="space-y-6">
-                    {/* Option 1: File */}
-                    <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 flex flex-col items-center justify-center text-center hover:bg-gray-50 transition-colors relative">
-                        <span className="absolute top-0 left-0 bg-gray-100 text-gray-500 text-xs px-2 py-1 rounded-br-lg font-bold">Option 1: File Upload</span>
-                        <UploadCloud size={48} className="text-blue-600 mb-4" />
-                        <label className="cursor-pointer">
-                            <span className="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors inline-block mb-2">
-                                Select Master File (Excel/CSV)
-                            </span>
-                            <input type="file" className="hidden" accept=".xlsx, .xls, .csv" onChange={handleMasterFileUpload} />
-                        </label>
-                        <p className="text-xs text-gray-400 mt-2">Supported formats: .csv, .xlsx, .xls</p>
-                        <p className="text-xs text-gray-400 mt-1">Required: Seat No, Student Name, College Code, College Name</p>
-                    </div>
-
-                     <div className="flex items-center justify-center">
-                         <div className="h-px bg-gray-300 flex-1"></div>
-                         <span className="px-3 text-sm text-gray-400 font-bold">OR</span>
-                         <div className="h-px bg-gray-300 flex-1"></div>
-                    </div>
-
-                     {/* Option 2: Paste */}
-                     <div className="border-2 border-dashed border-blue-200 bg-blue-50/30 rounded-xl p-6 relative">
-                        <span className="absolute top-0 left-0 bg-blue-100 text-blue-600 text-xs px-2 py-1 rounded-br-lg font-bold">Option 2: Copy-Paste</span>
-                        <label className="block text-sm font-bold text-blue-900 mb-2 flex items-center gap-2">
-                             <Clipboard size={16} /> Paste Data from Excel
-                        </label>
-                        <textarea
-                             value={pasteData}
-                             onChange={(e) => setPasteData(e.target.value)}
-                             className="w-full h-40 p-3 text-xs font-mono border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none resize-none bg-white placeholder-gray-400"
-                             placeholder={`Seat No\tStudent Name\tCollege Code\tCollege Name\n12345\tRahul Patil\t1201\tBJ Medical...`}
-                        />
-                        <button 
-                            onClick={handlePasteMasterData}
-                            disabled={loading || !pasteData.trim()}
-                            className="w-full mt-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                        >
-                             <Database size={16} /> Process & Upload Pasted Data
-                        </button>
-                        <p className="text-[10px] text-blue-600 mt-2 text-center">
-                            Copy data from Excel (including headers) and paste here.
-                        </p>
-                    </div>
-                </div>
-
-                {/* Status Area */}
-                <div className="bg-gray-50 rounded-xl p-6 border border-gray-200">
-                    <h3 className="font-semibold text-gray-700 mb-4">Master Data Status</h3>
-                    <div className="space-y-4">
-                        <div className="flex justify-between items-center p-3 bg-white rounded-lg border border-gray-100">
-                            <span className="text-gray-600 text-sm">Total Records (Local)</span>
-                            <span className="font-mono font-bold text-blue-600">{currentRecordCount}</span>
-                        </div>
-                        {loading && (
-                            <div className="mt-4 p-3 bg-white rounded-lg border border-blue-100 shadow-sm">
-                                <div className="flex justify-between items-center mb-1">
-                                    <div className="flex items-center gap-2 text-blue-600 text-sm font-semibold">
-                                        <UploadCloud className="animate-bounce" size={16} /> 
-                                        <span>Uploading... {uploadProgress}%</span>
-                                    </div>
-                                    <div className="flex items-center gap-1 text-xs text-orange-600 font-bold bg-orange-50 px-2 py-1 rounded">
-                                        <Clock size={12} /> {estimatedTime}
-                                    </div>
-                                </div>
-                                <div className="w-full bg-gray-200 rounded-full h-2">
-                                    <div className="bg-blue-600 h-2 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }}></div>
-                                </div>
-                                <div className="flex justify-between items-center mt-3 bg-blue-50 p-2 rounded border border-blue-200">
-                                    <span className="text-xs text-gray-500 font-bold uppercase">Live Progress</span>
-                                    <span className="text-base font-bold text-blue-700 font-mono">
-                                        {uploadStats.processed} <span className="text-gray-400 text-xs">/</span> {uploadStats.total}
-                                    </span>
-                                </div>
-                                <p className="text-xs text-gray-400 mt-1 text-center">Please wait, do not close.</p>
-                            </div>
-                        )}
-                        {error && (
-                            <div className="flex items-start gap-2 text-red-600 text-sm bg-red-50 p-3 rounded-lg whitespace-pre-wrap">
-                                <AlertCircle size={16} className="mt-0.5 shrink-0" />
-                                {error}
-                            </div>
-                        )}
-                        {successMsg && <div className="flex items-center gap-2 text-green-700 font-bold text-sm bg-green-50 p-4 rounded-lg border border-green-200 shadow-sm"><CheckCircle2 size={24} className="text-green-600" />{successMsg}</div>}
-                    </div>
+            {/* Progress Bar with Live Counter */}
+            <div className="w-full bg-blue-200 rounded-full h-4 mt-1 relative overflow-hidden">
+                <div 
+                    className="bg-blue-600 h-4 rounded-full transition-all duration-300 flex items-center justify-end pr-2 text-[10px] text-white font-bold"
+                    style={{ width: `${uploadProgress}%` }}
+                >
+                    {uploadProgress > 5 && `${uploadProgress}%`}
                 </div>
             </div>
-          </>
-        )}
-
-        {activeTab === 'ADDRESS' && (
-          <>
-            <h2 className="text-xl font-bold text-gray-800 mb-2">College Address & Email Upload</h2>
-            <p className="text-sm text-gray-500 mb-4 bg-yellow-50 p-3 rounded-lg border border-yellow-200">
-              <b>Permanent Storage:</b> Addresses uploaded here are saved permanently to the Cloud. 
-              You do <b>NOT</b> need to re-upload them every time. Upload again only to add <b>new colleges</b> or <b>update</b> emails.
-            </p>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {/* Upload Area */}
-                <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 flex flex-col items-center justify-center text-center hover:bg-gray-50 transition-colors">
-                    <MapPin size={48} className="text-emerald-600 mb-4" />
-                    <label className="cursor-pointer">
-                        <span className="bg-emerald-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-emerald-700 transition-colors inline-block mb-2">
-                            Select Address File (Excel/CSV)
-                        </span>
-                        <input type="file" className="hidden" accept=".xlsx, .xls, .csv" onChange={handleAddressFileUpload} />
-                    </label>
-                    <p className="text-xs text-gray-400 mt-2">Supported formats: .csv, .xlsx, .xls</p>
-                    <p className="text-xs text-gray-400 mt-1 font-bold">Columns: College Code, Address, Email ID</p>
-                </div>
-                {/* Status Area */}
-                <div className="bg-gray-50 rounded-xl p-6 border border-gray-200">
-                    <h3 className="font-semibold text-gray-700 mb-4">Address Data Status</h3>
-                    <div className="space-y-4">
-                        <div className="flex justify-between items-center p-3 bg-white rounded-lg border border-gray-100">
-                            <span className="text-gray-600 text-sm">Total Addresses (Local)</span>
-                            <span className="font-mono font-bold text-emerald-600">{currentAddressCount}</span>
-                        </div>
-                         {loading && (
-                            <div className="mt-4 p-3 bg-white rounded-lg border border-blue-100 shadow-sm">
-                                <div className="flex justify-between items-center mb-1">
-                                    <div className="flex items-center gap-2 text-blue-600 text-sm font-semibold">
-                                        <UploadCloud className="animate-bounce" size={16} /> 
-                                        <span>Uploading... {uploadProgress}%</span>
-                                    </div>
-                                    <div className="flex items-center gap-1 text-xs text-orange-600 font-bold bg-orange-50 px-2 py-1 rounded">
-                                        <Clock size={12} /> {estimatedTime}
-                                    </div>
-                                </div>
-                                <div className="w-full bg-gray-200 rounded-full h-2">
-                                    <div className="bg-blue-600 h-2 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }}></div>
-                                </div>
-                                 <div className="flex justify-between items-center mt-3 bg-blue-50 p-2 rounded border border-blue-200">
-                                    <span className="text-xs text-gray-500 font-bold uppercase">Live Progress</span>
-                                    <span className="text-base font-bold text-blue-700 font-mono">
-                                        {uploadStats.processed} <span className="text-gray-400 text-xs">/</span> {uploadStats.total}
-                                    </span>
-                                </div>
-                            </div>
-                        )}
-                        {error && (
-                            <div className="flex items-start gap-2 text-red-600 text-sm bg-red-50 p-3 rounded-lg whitespace-pre-wrap">
-                                <AlertCircle size={16} className="mt-0.5 shrink-0" />
-                                {error}
-                            </div>
-                        )}
-                        {successMsg && <div className="flex items-center gap-2 text-green-700 font-bold text-sm bg-green-50 p-4 rounded-lg border border-green-200 shadow-sm"><CheckCircle2 size={24} className="text-green-600" />{successMsg}</div>}
-                    </div>
-                </div>
-            </div>
-          </>
-        )}
-
-        {/* SETTINGS, SESSION Tabs remain the same... (Hidden to save tokens) */}
-        {activeTab === 'SETTINGS' && (
-             <>
-                <h2 className="text-xl font-bold text-gray-800 mb-2">Letter Configuration</h2>
-                {successMsg && <div className="mb-4 flex items-start gap-2 text-green-600 text-sm bg-green-50 p-3 rounded-lg"><CheckCircle size={16} className="mt-0.5 shrink-0" />{successMsg}</div>}
-                 
-                 {/* Email Configuration Section */}
-                 <div className="mb-8 bg-blue-50 p-6 rounded-xl border border-blue-200 shadow-sm">
-                    <div className="flex justify-between items-center mb-4">
-                        <h3 className="font-bold text-blue-900 flex items-center gap-2">
-                            <Mail size={18} /> Automatic Email Configuration (EmailJS)
-                        </h3>
-                        <button 
-                            onClick={handleSaveEmailKeys}
-                            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm flex items-center gap-2"
-                        >
-                            <Save size={14} /> Save Email Keys
-                        </button>
-                    </div>
-                    <p className="text-xs text-blue-700 mb-4">
-                        Configure this to enable "Direct Send" from your own faculty email. 
-                        Sign up at <a href="https://www.emailjs.com/" target="_blank" className="underline font-bold">emailjs.com</a>, 
-                        connect your Office Email (Gmail/Outlook), and paste the keys here.
-                    </p>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div>
-                             <label className="block text-xs font-bold text-blue-800 mb-1">Service ID</label>
-                             <input type="text" name="emailServiceId" value={settingsForm.emailServiceId || ''} onChange={handleSettingsChange} className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="e.g. service_xyz" />
-                        </div>
-                        <div>
-                             <label className="block text-xs font-bold text-blue-800 mb-1">Template ID</label>
-                             <input type="text" name="emailTemplateId" value={settingsForm.emailTemplateId || ''} onChange={handleSettingsChange} className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="e.g. template_abc" />
-                        </div>
-                        <div>
-                             <label className="block text-xs font-bold text-blue-800 mb-1">Public Key</label>
-                             <input type="text" name="emailPublicKey" value={settingsForm.emailPublicKey || ''} onChange={handleSettingsChange} className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="e.g. user_12345" />
-                        </div>
-                    </div>
-                 </div>
-
-                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    {/* Marathi Section */}
-                    <div className="bg-gray-50 p-6 rounded-xl border border-gray-200">
-                         <h3 className="font-bold text-gray-800 mb-4 border-b border-gray-200 pb-2">Marathi Details</h3>
-                         <div className="space-y-4">
-                             <div>
-                                 <label className="block text-sm font-medium text-gray-700 mb-1">Officer Name (Mr/Mrs)</label>
-                                 <input type="text" name="officerNameMr" value={settingsForm.officerNameMr} onChange={handleSettingsChange} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
-                             </div>
-                             <div>
-                                 <label className="block text-sm font-medium text-gray-700 mb-1">Designation</label>
-                                 <input type="text" name="officerDesigMr" value={settingsForm.officerDesigMr} onChange={handleSettingsChange} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
-                             </div>
-                             <div>
-                                 <label className="block text-sm font-medium text-gray-700 mb-1">Department/Faculty</label>
-                                 <input type="text" name="officerDeptMr" value={settingsForm.officerDeptMr} onChange={handleSettingsChange} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
-                             </div>
-                         </div>
-                    </div>
-
-                    {/* English Section */}
-                    <div className="bg-gray-50 p-6 rounded-xl border border-gray-200">
-                         <h3 className="font-bold text-gray-800 mb-4 border-b border-gray-200 pb-2">English Details</h3>
-                         <div className="space-y-4">
-                             <div>
-                                 <label className="block text-sm font-medium text-gray-700 mb-1">Officer Name</label>
-                                 <input type="text" name="officerNameEn" value={settingsForm.officerNameEn} onChange={handleSettingsChange} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
-                             </div>
-                             <div>
-                                 <label className="block text-sm font-medium text-gray-700 mb-1">Designation</label>
-                                 <input type="text" name="officerDesigEn" value={settingsForm.officerDesigEn} onChange={handleSettingsChange} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
-                             </div>
-                             <div>
-                                 <label className="block text-sm font-medium text-gray-700 mb-1">Department/Faculty</label>
-                                 <input type="text" name="officerDeptEn" value={settingsForm.officerDeptEn} onChange={handleSettingsChange} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
-                             </div>
-                         </div>
-                    </div>
-
-                     {/* Signature Upload Section */}
-                     <div className="lg:col-span-2 bg-blue-50 p-6 rounded-xl border border-blue-200">
-                        <div className="flex justify-between items-center mb-4 border-b border-blue-200 pb-2">
-                            <h3 className="font-bold text-blue-900 flex items-center gap-2">
-                                <PenTool size={18} /> Digital Signature
-                            </h3>
-                            {settingsForm.signatureImage && (
-                                <button onClick={handleRemoveSignature} className="text-xs text-red-600 hover:text-red-800 font-medium">
-                                    Remove Signature
-                                </button>
-                            )}
-                        </div>
-                        
-                        <div className="flex flex-col md:flex-row gap-6 items-center">
-                            <div className="flex-1 w-full">
-                                <label className="block text-sm font-medium text-blue-800 mb-2">Upload Signature Image</label>
-                                <div className="border-2 border-dashed border-blue-300 rounded-lg p-4 bg-white hover:bg-blue-50 transition-colors text-center">
-                                    <input type="file" accept="image/*" onChange={handleSignatureUpload} className="hidden" id="sig-upload" />
-                                    <label htmlFor="sig-upload" className="cursor-pointer block w-full">
-                                        <div className="flex flex-col items-center gap-2 text-blue-600">
-                                            <Upload size={24} />
-                                            <span className="text-sm font-medium">Click to select file</span>
-                                        </div>
-                                    </label>
-                                </div>
-                            </div>
-                            <div className="w-full md:w-64">
-                                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 text-center">Preview</label>
-                                <div className="bg-white border border-gray-300 rounded-lg h-32 flex items-center justify-center overflow-hidden relative">
-                                    {settingsForm.signatureImage ? (
-                                        <img 
-                                            src={settingsForm.signatureImage} 
-                                            alt="Signature Preview" 
-                                            className="max-h-24 max-w-[90%] object-contain mix-blend-multiply"
-                                            style={{ filter: 'grayscale(100%) sepia(100%) hue-rotate(190deg) saturate(500%) brightness(80%) contrast(150%)' }}
-                                        />
-                                    ) : (
-                                        <span className="text-gray-400 text-sm">No signature</span>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                     {/* Logo Upload Section */}
-                     <div className="lg:col-span-2 bg-purple-50 p-6 rounded-xl border border-purple-200 mt-4">
-                        <div className="flex justify-between items-center mb-4 border-b border-purple-200 pb-2">
-                            <h3 className="font-bold text-purple-900 flex items-center gap-2">
-                                <Image size={18} /> University Logo
-                            </h3>
-                            {settingsForm.universityLogo && (
-                                <button onClick={handleRemoveLogo} className="text-xs text-red-600 hover:text-red-800 font-medium">
-                                    Remove Logo
-                                </button>
-                            )}
-                        </div>
-                        
-                        <div className="flex flex-col md:flex-row gap-6 items-center">
-                            <div className="flex-1 w-full">
-                                <label className="block text-sm font-medium text-purple-800 mb-2">Upload Logo Image</label>
-                                <div className="border-2 border-dashed border-purple-300 rounded-lg p-4 bg-white hover:bg-purple-50 transition-colors text-center">
-                                    <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" id="logo-upload" />
-                                    <label htmlFor="logo-upload" className="cursor-pointer block w-full">
-                                        <div className="flex flex-col items-center gap-2 text-purple-600">
-                                            <Upload size={24} />
-                                            <span className="text-sm font-medium">Click to select file</span>
-                                        </div>
-                                    </label>
-                                </div>
-                            </div>
-                            <div className="w-full md:w-64">
-                                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 text-center">Preview</label>
-                                <div className="bg-white border border-gray-300 rounded-lg h-32 flex items-center justify-center overflow-hidden relative">
-                                    {settingsForm.universityLogo ? (
-                                        <img 
-                                            src={settingsForm.universityLogo} 
-                                            alt="Logo Preview" 
-                                            className="max-h-24 max-w-[90%] object-contain"
-                                        />
-                                    ) : (
-                                        <span className="text-gray-400 text-sm">No logo</span>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                 </div>
-                 <div className="mt-6 flex justify-end">
-                    <button 
-                        onClick={handleSaveSettings}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium flex items-center gap-2 shadow-lg transition-colors"
-                    >
-                        <Save size={18} /> Save Settings
-                    </button>
-                </div>
-             </>
-        )}
-
-        {/* SESSION TAB (Unchanged) */}
-        {activeTab === 'SESSION' && (
-             <>
-                <h2 className="text-xl font-bold text-gray-800 mb-2">Exam Session Management</h2>
-                 {successMsg && <div className="mb-4 flex items-start gap-2 text-green-600 text-sm bg-green-50 p-3 rounded-lg"><CheckCircle size={16} className="mt-0.5 shrink-0" />{successMsg}</div>}
-
-                {/* --- IMPORT EXCEL AS SESSION DATA --- */}
-                <div className="mb-8 bg-green-50 p-6 rounded-xl border border-green-200">
-                    <h3 className="font-bold text-green-900 mb-4 flex items-center gap-2">
-                        <FileSpreadsheet size={20} /> Import Excel Data to Session (New)
-                    </h3>
-                    <p className="text-sm text-green-700 mb-4">
-                        <b>Direct Import:</b> Upload your Master Excel file here to automatically convert and load it as active student applications for this session. 
-                        No need to convert to JSON manually.
-                    </p>
-                    <div className="flex gap-4 items-center flex-wrap">
-                        <div className="relative">
-                            <input type="file" accept=".xlsx, .xls, .csv" onChange={handleImportExcelToSession} className="hidden" id="excel-import" />
-                            <label htmlFor="excel-import" className="cursor-pointer bg-green-600 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 hover:bg-green-700 shadow-sm transition-colors">
-                                <Upload size={18} /> Import Students from Excel
-                            </label>
-                        </div>
-                         <div className="flex items-center gap-2 text-xs text-green-800 bg-white px-3 py-1 rounded-full border border-green-200">
-                            <ArrowRightCircle size={14} /> Fastest Way to Initialize Data
-                        </div>
-                    </div>
-                     {loading && (
-                        <div className="mt-4 p-3 bg-white rounded-lg border border-green-100 shadow-sm">
-                             <div className="flex justify-between items-center mb-1">
-                                <div className="text-xs text-green-700 font-bold">Importing Data...</div>
-                                <div className="flex items-center gap-1 text-xs text-orange-600 font-bold bg-orange-50 px-2 py-1 rounded">
-                                    <Clock size={12} /> {estimatedTime}
-                                </div>
-                             </div>
-                             <div className="w-full bg-gray-200 rounded-full h-2.5">
-                                <div className="bg-green-600 h-2.5 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }}></div>
-                             </div>
-                             <div className="flex justify-between items-center mt-3 bg-green-50 p-2 rounded border border-green-200">
-                                    <span className="text-xs text-gray-500 font-bold uppercase">Live Progress</span>
-                                    <span className="text-base font-bold text-green-700 font-mono">
-                                        {uploadStats.processed} <span className="text-gray-400 text-xs">/</span> {uploadStats.total}
-                                    </span>
-                                </div>
-                        </div>
-                    )}
-                     {error && (
-                        <div className="flex items-start gap-2 text-red-600 text-sm bg-red-50 p-3 rounded-lg mt-2 whitespace-pre-wrap">
-                            <AlertCircle size={16} className="mt-0.5 shrink-0" />
-                            {error}
-                        </div>
-                    )}
-                </div>
-                 
-                {/* Full Data Backup / Restore (Using JSON) - Solves "Use Storage" question */}
-                 <div className="mb-8 bg-indigo-50 p-6 rounded-xl border border-indigo-200">
-                    <h3 className="font-bold text-indigo-900 mb-4 flex items-center gap-2">
-                         <FileJson size={20} /> Full System Backup & Restore
-                    </h3>
-                    <p className="text-sm text-indigo-700 mb-4">
-                        Use this to backup the <b>Full Application State</b> (JSON) to your Drive. 
-                        <b>Note:</b> Only use "Restore" for files created by this "Download Backup" button.
-                    </p>
-                    <div className="flex gap-4 items-center flex-wrap">
-                        <button 
-                            onClick={handleBackupData}
-                            disabled={loading}
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 shadow-sm disabled:opacity-50"
-                        >
-                            <Download size={18} /> Download Backup
-                        </button>
-                        
-                        <div className="relative">
-                            <input type="file" accept=".json" onChange={handleRestoreData} className="hidden" id="json-restore" />
-                            <label htmlFor="json-restore" className="cursor-pointer bg-white border border-indigo-300 text-indigo-700 px-4 py-2 rounded-lg font-medium flex items-center gap-2 hover:bg-indigo-50 shadow-sm">
-                                <Upload size={18} /> Restore Backup
-                            </label>
-                        </div>
-                    </div>
-                     {error && (
-                        <div className="flex items-start gap-2 text-red-600 text-sm bg-red-50 p-3 rounded-lg mt-2 whitespace-pre-wrap">
-                            <AlertCircle size={16} className="mt-0.5 shrink-0" />
-                            {error}
-                        </div>
-                    )}
-                 </div>
-
-                {/* Session UI Grids */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                     <div className="bg-white rounded-xl border border-blue-200 shadow-sm overflow-hidden">
-                        <div className="bg-blue-50 px-6 py-4 border-b border-blue-100">
-                            <h3 className="font-bold text-blue-800">Current Session</h3>
-                        </div>
-                        <div className="p-6">
-                             {/* Tabs for Multiple Exams */}
-                             <div className="mb-6">
-                                <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Active Exams List</label>
-                                <div className="flex flex-wrap gap-2">
-                                    {examList.map(name => (
-                                        <div 
-                                            key={name}
-                                            onClick={() => onSelectExam && onSelectExam(name)}
-                                            className={`
-                                                relative group cursor-pointer px-4 py-2 rounded-lg text-sm font-bold border transition-all select-none
-                                                ${currentExamName === name 
-                                                    ? 'bg-blue-600 text-white border-blue-600 shadow-md' 
-                                                    : 'bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-200'
-                                                }
-                                            `}
-                                        >
-                                            {name}
-                                            {/* Delete Button (Only if more than 1 exists) */}
-                                            {examList.length > 1 && (
-                                                <button 
-                                                    onClick={(e) => handleDeleteExamTab(e, name)}
-                                                    className={`
-                                                        absolute -top-2 -right-2 p-0.5 rounded-full shadow-sm opacity-0 group-hover:opacity-100 transition-opacity
-                                                        ${currentExamName === name ? 'bg-white text-red-600' : 'bg-red-500 text-white'}
-                                                    `}
-                                                    title="Remove Tab"
-                                                >
-                                                    <X size={12} />
-                                                </button>
-                                            )}
-                                        </div>
-                                    ))}
-                                    <button 
-                                        onClick={handleAddExamTab}
-                                        className="px-3 py-2 rounded-lg border-2 border-dashed border-blue-300 text-blue-600 hover:border-blue-500 hover:text-blue-700 transition-colors flex items-center justify-center"
-                                        title="Add New Exam Phase"
-                                    >
-                                        <Plus size={16} />
-                                    </button>
-                                </div>
-                                <p className="text-[10px] text-gray-400 mt-2">
-                                    Click a tab to set as "Active". Add new tabs for different phases (e.g. Phase-I, Phase-II).
-                                </p>
-                             </div>
-
-                             <div className="border-t border-gray-200 pt-4 mt-4">
-                                <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Active Years for {currentExamName}</label>
-                                <div className="flex flex-wrap gap-3 mb-6">
-                                    {SUBJECT_CONFIG.map(config => {
-                                        const isSelected = currentSessionYears.includes(config.year);
-                                        return (
-                                            <button
-                                                key={config.year}
-                                                type="button"
-                                                onClick={() => handleToggleSessionYear(config.year)}
-                                                className={`
-                                                    flex items-center gap-2 px-3 py-2 rounded-md border text-sm font-medium transition-all
-                                                    ${isSelected 
-                                                        ? 'bg-blue-600 text-white border-blue-600 shadow-sm' 
-                                                        : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
-                                                    }
-                                                `}
-                                            >
-                                                {isSelected ? <CheckSquare size={16} /> : <Square size={16} />}
-                                                {config.year}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                             </div>
-
-                             <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                                <label className="block text-xs font-bold text-gray-700 mb-2">Archive Current Session</label>
-                                <input 
-                                    type="text" 
-                                    value={nextExamName}
-                                    onChange={(e) => setNextExamName(e.target.value)}
-                                    className="w-full px-3 py-2 border rounded-lg mb-4 focus:ring-2 focus:ring-blue-500 outline-none bg-white"
-                                    placeholder="Enter Name for NEXT Session (e.g. WINTER-2025)"
-                                />
-                                <button 
-                                    onClick={handleStartNewSession}
-                                    className="w-full bg-gray-800 hover:bg-gray-900 text-white px-4 py-2 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors"
-                                >
-                                    <RefreshCw size={18} /> Archive "{currentExamName}" & Reset
-                                </button>
-                                <p className="text-[10px] text-gray-500 mt-2 text-center">
-                                    Warning: This will move all current students to Archive.
-                                </p>
-                            </div>
-                        </div>
-                     </div>
-                     
-                     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                        <div className="bg-gray-50 px-6 py-4 border-b border-gray-200">
-                            <h3 className="font-bold text-gray-800">Archived Sessions</h3>
-                        </div>
-                         <div className="p-0 overflow-y-auto max-h-[400px]">
-                             {archives.length === 0 ? (
-                                <div className="p-6 text-center text-gray-500 text-sm">No archives found in Cloud.</div>
-                            ) : (
-                                <table className="w-full text-sm text-left">
-                                    <thead className="bg-gray-50 text-gray-500 border-b">
-                                        <tr>
-                                            <th className="px-4 py-2">Exam Name</th>
-                                            <th className="px-4 py-2">Date</th>
-                                            <th className="px-4 py-2">Action</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y">
-                                        {archives.map((arch) => (
-                                            <tr key={arch.id} className="hover:bg-gray-50">
-                                                <td className="px-4 py-3 font-medium text-gray-800">
-                                                    <div>{arch.examName}</div>
-                                                </td>
-                                                <td className="px-4 py-3 text-gray-500">{arch.archivedDate}</td>
-                                                <td className="px-4 py-3">
-                                                    <button 
-                                                        onClick={() => onRestoreArchive(arch)}
-                                                        className="text-blue-600 hover:text-blue-800 text-xs font-bold border border-blue-200 hover:border-blue-400 px-2 py-1 rounded bg-blue-50 flex items-center gap-1"
-                                                    >
-                                                        <Eye size={12} /> View
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            )}
-                         </div>
-                     </div>
-                </div>
-             </>
-        )}
-
-        {activeTab === 'ACCESS' && isAdminUser && (
-             <>
-                <h2 className="text-xl font-bold text-gray-800 mb-2">User Access & Password Control</h2>
-                {successMsg && <div className="mb-4 flex items-start gap-2 text-green-600 text-sm bg-green-50 p-3 rounded-lg"><CheckCircle size={16} className="mt-0.5 shrink-0" />{successMsg}</div>}
-                 
-                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {FACULTIES.map(faculty => (
-                        <div key={faculty.id} className={`p-4 rounded-lg border flex flex-col justify-between ${allowedFaculties.includes(faculty.id) ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'}`}>
-                            <div className="flex items-center justify-between mb-3">
-                                <label className="flex items-center space-x-3 cursor-pointer">
-                                    <input 
-                                        type="checkbox" 
-                                        className="form-checkbox h-5 w-5 text-blue-600 rounded"
-                                        checked={allowedFaculties.includes(faculty.id)}
-                                        onChange={() => handleTogglePermission(faculty.id)}
-                                        disabled={faculty.id === 'medical'}
-                                    />
-                                    <span className={`font-bold ${allowedFaculties.includes(faculty.id) ? 'text-blue-800' : 'text-gray-600'}`}>
-                                        {faculty.label}
-                                    </span>
-                                </label>
-                            </div>
-                            
-                            <div className="mt-2">
-                                <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 flex items-center gap-1">
-                                    <Key size={10} /> Set Password
-                                </label>
-                                <input 
-                                    type="text" 
-                                    value={passwords[faculty.id] || ''}
-                                    onChange={(e) => handlePasswordChange(faculty.id, e.target.value)}
-                                    placeholder="Default: 1234"
-                                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 outline-none bg-white text-gray-800 font-mono"
-                                />
-                            </div>
-                        </div>
-                    ))}
-                </div>
-
-                <div className="mt-8 flex justify-end">
-                    <button 
-                        onClick={handleSavePermissions}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium flex items-center gap-2 shadow-lg transition-colors"
-                    >
-                        <Lock size={18} /> Save All Changes
-                    </button>
-                </div>
-             </>
-        )}
-
-      </div>
-
-      {previewData.length > 0 && activeTab !== 'SETTINGS' && activeTab !== 'ACCESS' && activeTab !== 'SESSION' && (
-          <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
-                <h3 className="font-semibold text-gray-700">Preview (Top 5 Records)</h3>
-            </div>
-            <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left">
-                    <thead className="bg-gray-50 text-gray-500 font-medium border-b border-gray-200">
-                        <tr>
-                            {activeTab === 'MASTER' ? (
-                              <>
-                                <th className="px-6 py-3">Seat No</th>
-                                <th className="px-6 py-3">Student Name</th>
-                                <th className="px-6 py-3">Code</th>
-                                <th className="px-6 py-3">College</th>
-                              </>
-                            ) : (
-                              <>
-                                <th className="px-6 py-3">College Code</th>
-                                <th className="px-6 py-3">Address</th>
-                                <th className="px-6 py-3">Email</th>
-                              </>
-                            )}
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                        {previewData.slice(0, 5).map((row, idx) => (
-                            <tr key={idx} className="hover:bg-gray-50">
-                                {activeTab === 'MASTER' ? (
-                                  <>
-                                    <td className="px-6 py-3 font-mono text-gray-900">{row.seatNo}</td>
-                                    <td className="px-6 py-3 text-gray-900 font-medium">{row.studentName}</td>
-                                    <td className="px-6 py-3 text-gray-900">{row.collegeCode}</td>
-                                    <td className="px-6 py-3 truncate max-w-xs text-gray-900">{row.collegeName}</td>
-                                  </>
-                                ) : (
-                                  <>
-                                    <td className="px-6 py-3 font-mono font-bold text-emerald-600">{row.collegeCode}</td>
-                                    <td className="px-6 py-3 truncate max-w-lg text-gray-900 font-medium" title={row.address}>{row.address}</td>
-                                    <td className="px-6 py-3 text-gray-700">{row.email || '-'}</td>
-                                  </>
-                                )}
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
+            <div className="text-xs text-blue-600 font-mono text-center">
+                 Processed: {uploadStats.processed} / {uploadStats.total} records
             </div>
           </div>
-      )}
+        )}
+
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg flex items-center gap-2">
+            <AlertCircle size={20} />
+            <span className="font-medium whitespace-pre-wrap">{error}</span>
+          </div>
+        )}
+
+        {successMsg && (
+          <div className="mb-6 p-4 bg-green-50 border border-green-200 text-green-700 rounded-lg flex items-center gap-2 animate-pulse">
+            <CheckCircle size={20} />
+            <span className="font-medium">{successMsg}</span>
+          </div>
+        )}
+
+        {/* MASTER DATA TAB */}
+        {activeTab === 'MASTER' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Stats Card */}
+             <div className="md:col-span-2 bg-gradient-to-r from-blue-600 to-indigo-700 rounded-xl p-6 text-white shadow-lg">
+                <div className="flex justify-between items-center">
+                    <div>
+                        <p className="text-blue-100 font-medium mb-1">Total Master Records</p>
+                        <h2 className="text-4xl font-bold">{currentRecordCount}</h2>
+                    </div>
+                    <Database size={48} className="text-blue-300 opacity-50" />
+                </div>
+                <div className="mt-4 text-sm text-blue-100 bg-white/10 p-2 rounded">
+                    ℹ️ Uploading Master Records enables "Auto-fill" in Student Form.
+                </div>
+            </div>
+
+            {/* Upload XLSX */}
+            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                    <FileSpreadsheet size={20} className="text-green-600" />
+                    Upload Master List (XLSX)
+                </h3>
+                <p className="text-sm text-gray-500 mb-4">
+                    Upload an Excel file with columns: 
+                    <span className="font-mono bg-gray-100 px-1 rounded mx-1">Seat No</span>
+                    <span className="font-mono bg-gray-100 px-1 rounded mx-1">Student Name</span>
+                    (Optional: College Code, College Name)
+                </p>
+                
+                <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors">
+                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                        <UploadCloud className="w-8 h-8 mb-3 text-gray-400" />
+                        <p className="mb-2 text-sm text-gray-500"><span className="font-semibold">Click to upload</span> or drag and drop</p>
+                        <p className="text-xs text-gray-500">XLSX files only</p>
+                    </div>
+                    <input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleMasterFileUpload} disabled={loading} />
+                </label>
+            </div>
+
+            {/* Paste Data */}
+            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                    <Clipboard size={20} className="text-orange-600" />
+                    Paste From Excel
+                </h3>
+                <p className="text-sm text-gray-500 mb-2">
+                    Copy columns from Excel (Header + Data) and paste here.
+                </p>
+                <textarea 
+                    className="w-full h-32 p-3 border border-gray-300 rounded-lg text-xs font-mono mb-3 focus:ring-2 focus:ring-orange-500 outline-none"
+                    placeholder={`Seat No\tStudent Name\tCollege Code\n12345\tJohn Doe\t1024`}
+                    value={pasteData}
+                    onChange={(e) => setPasteData(e.target.value)}
+                ></textarea>
+                <button 
+                    onClick={handlePasteMasterData}
+                    disabled={loading || !pasteData.trim()}
+                    className="w-full py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-bold text-sm transition-colors disabled:opacity-50"
+                >
+                    Process Paste Data
+                </button>
+            </div>
+
+            {/* Backup & Restore Zone */}
+            <div className="md:col-span-2 bg-slate-800 p-6 rounded-xl text-white shadow-lg mt-4">
+                <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+                    <Archive size={20} className="text-yellow-400" />
+                    Data Backup & Restore
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="bg-slate-700 p-4 rounded-lg">
+                        <h4 className="font-bold text-yellow-400 mb-2 flex items-center gap-2"><Download size={16}/> Backup JSON</h4>
+                        <p className="text-xs text-gray-300 mb-3">Download all current student data as a JSON file.</p>
+                        <button onClick={handleBackupData} disabled={loading} className="w-full py-2 bg-yellow-500 hover:bg-yellow-600 text-black font-bold rounded text-sm transition-colors">
+                            Download Backup
+                        </button>
+                    </div>
+                    
+                    <div className="bg-slate-700 p-4 rounded-lg">
+                         <h4 className="font-bold text-green-400 mb-2 flex items-center gap-2"><Upload size={16}/> Restore JSON</h4>
+                         <p className="text-xs text-gray-300 mb-3">Restore data from a previously downloaded JSON file.</p>
+                         <label className="block w-full text-center py-2 bg-green-600 hover:bg-green-700 text-white font-bold rounded text-sm cursor-pointer transition-colors">
+                            Select JSON File
+                            <input type="file" className="hidden" accept=".json" onChange={handleRestoreData} disabled={loading} />
+                        </label>
+                    </div>
+
+                    <div className="bg-slate-700 p-4 rounded-lg border border-teal-500/30">
+                         <h4 className="font-bold text-teal-400 mb-2 flex items-center gap-2"><FileSpreadsheet size={16}/> Import Excel Session</h4>
+                         <p className="text-xs text-gray-300 mb-3">Directly import student data from Excel into the current session.</p>
+                         <label className="block w-full text-center py-2 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded text-sm cursor-pointer transition-colors">
+                            Select Excel File
+                            <input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleImportExcelToSession} disabled={loading} />
+                        </label>
+                    </div>
+                </div>
+            </div>
+          </div>
+        )}
+
+        {/* ADDRESS DATA TAB */}
+        {activeTab === 'ADDRESS' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+             <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                <div className="flex justify-between items-start mb-4">
+                    <div>
+                        <h3 className="text-lg font-bold text-gray-800">College Address Data</h3>
+                        <p className="text-sm text-gray-500">Total Records: {currentAddressCount}</p>
+                    </div>
+                    <MapPin size={32} className="text-red-500" />
+                </div>
+                
+                <div className="bg-blue-50 p-3 rounded text-xs text-blue-800 mb-4">
+                    Required Columns: <span className="font-bold">College Code</span>, <span className="font-bold">Address</span>
+                    <br/>Optional: <span className="font-bold">Email</span> (For Automated Mailing)
+                </div>
+
+                <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors">
+                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                        <UploadCloud className="w-8 h-8 mb-3 text-gray-400" />
+                        <p className="mb-2 text-sm text-gray-500"><span className="font-semibold">Upload Address File</span></p>
+                    </div>
+                    <input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleAddressFileUpload} disabled={loading} />
+                </label>
+            </div>
+          </div>
+        )}
+
+        {/* SETTINGS TAB */}
+        {activeTab === 'SETTINGS' && (
+           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+               {/* Officer Details */}
+               <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                   <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                       <PenTool size={20} className="text-purple-600" /> Letter Signatories
+                   </h3>
+                   <div className="space-y-4">
+                       <div className="grid grid-cols-2 gap-4">
+                           <div>
+                               <label className="block text-xs font-bold text-gray-500 uppercase">Officer Name (Marathi)</label>
+                               <input type="text" name="officerNameMr" value={settingsForm.officerNameMr} onChange={handleSettingsChange} className="w-full p-2 border rounded" />
+                           </div>
+                           <div>
+                               <label className="block text-xs font-bold text-gray-500 uppercase">Designation (Marathi)</label>
+                               <input type="text" name="officerDesigMr" value={settingsForm.officerDesigMr} onChange={handleSettingsChange} className="w-full p-2 border rounded" />
+                           </div>
+                           <div>
+                               <label className="block text-xs font-bold text-gray-500 uppercase">Officer Name (English)</label>
+                               <input type="text" name="officerNameEn" value={settingsForm.officerNameEn} onChange={handleSettingsChange} className="w-full p-2 border rounded" />
+                           </div>
+                           <div>
+                               <label className="block text-xs font-bold text-gray-500 uppercase">Designation (English)</label>
+                               <input type="text" name="officerDesigEn" value={settingsForm.officerDesigEn} onChange={handleSettingsChange} className="w-full p-2 border rounded" />
+                           </div>
+                       </div>
+                       <button onClick={handleSaveSettings} className="w-full py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-bold">Save Details</button>
+                   </div>
+               </div>
+
+               {/* Images */}
+               <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                   <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                       <Image size={20} className="text-pink-600" /> Digital Assets
+                   </h3>
+                   <div className="space-y-4">
+                        <div>
+                            <label className="block text-sm font-medium mb-1">University Logo</label>
+                            <div className="flex items-center gap-4">
+                                {settingsForm.universityLogo && <img src={settingsForm.universityLogo} className="h-12 w-12 object-contain border rounded" />}
+                                <input type="file" accept="image/*" onChange={handleLogoUpload} className="text-xs" />
+                                {settingsForm.universityLogo && <button onClick={handleRemoveLogo} className="text-red-500 text-xs hover:underline">Remove</button>}
+                            </div>
+                        </div>
+                        <hr/>
+                        <div>
+                            <label className="block text-sm font-medium mb-1">Officer Signature</label>
+                            <div className="flex items-center gap-4">
+                                {settingsForm.signatureImage && <img src={settingsForm.signatureImage} className="h-12 w-auto object-contain border rounded bg-gray-50" />}
+                                <input type="file" accept="image/*" onChange={handleSignatureUpload} className="text-xs" />
+                                {settingsForm.signatureImage && <button onClick={handleRemoveSignature} className="text-red-500 text-xs hover:underline">Remove</button>}
+                            </div>
+                        </div>
+                   </div>
+                   <button onClick={handleSaveSettings} className="w-full mt-4 py-2 bg-pink-600 hover:bg-pink-700 text-white rounded font-bold">Save Images</button>
+               </div>
+
+               {/* EmailJS Configuration */}
+               <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm lg:col-span-2">
+                   <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                       <Mail size={20} className="text-blue-600" /> Automated Email Configuration (EmailJS)
+                   </h3>
+                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                       <div>
+                           <label className="block text-xs font-bold text-gray-500 uppercase">Service ID</label>
+                           <input type="text" name="emailServiceId" value={settingsForm.emailServiceId} onChange={handleSettingsChange} className="w-full p-2 border rounded font-mono text-sm" placeholder="service_xxx" />
+                       </div>
+                       <div>
+                           <label className="block text-xs font-bold text-gray-500 uppercase">Template ID</label>
+                           <input type="text" name="emailTemplateId" value={settingsForm.emailTemplateId} onChange={handleSettingsChange} className="w-full p-2 border rounded font-mono text-sm" placeholder="template_xxx" />
+                       </div>
+                       <div>
+                           <label className="block text-xs font-bold text-gray-500 uppercase">Public Key</label>
+                           <input type="text" name="emailPublicKey" value={settingsForm.emailPublicKey} onChange={handleSettingsChange} className="w-full p-2 border rounded font-mono text-sm" placeholder="user_xxx" />
+                       </div>
+                   </div>
+                   <div className="mt-4 flex justify-end">
+                       <button onClick={handleSaveEmailKeys} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold">Save Email Keys</button>
+                   </div>
+               </div>
+           </div>
+        )}
+
+        {/* ACCESS CONTROL TAB */}
+        {activeTab === 'ACCESS' && isAdminUser && (
+            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                <h3 className="text-lg font-bold text-gray-800 mb-6 flex items-center gap-2">
+                    <Lock size={20} className="text-orange-600" /> Faculty Access Control
+                </h3>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                        <thead>
+                            <tr className="bg-gray-50 border-b">
+                                <th className="p-3">Faculty</th>
+                                <th className="p-3 text-center">Access Enabled</th>
+                                <th className="p-3">Password</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {FACULTIES.map(faculty => (
+                                <tr key={faculty.id} className="border-b">
+                                    <td className="p-3 font-medium">{faculty.label}</td>
+                                    <td className="p-3 text-center">
+                                        <input 
+                                            type="checkbox" 
+                                            checked={allowedFaculties.includes(faculty.id)} 
+                                            onChange={() => handleTogglePermission(faculty.id)}
+                                            disabled={faculty.id === 'medical'} // Medical always active
+                                            className="w-5 h-5 accent-orange-600"
+                                        />
+                                    </td>
+                                    <td className="p-3">
+                                        <div className="flex items-center gap-2 max-w-xs">
+                                            <Key size={14} className="text-gray-400" />
+                                            <input 
+                                                type="text" 
+                                                value={passwords[faculty.id] || ''} 
+                                                onChange={(e) => handlePasswordChange(faculty.id, e.target.value)}
+                                                placeholder="Set Password"
+                                                className="w-full p-1 border rounded text-sm font-mono"
+                                            />
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+                <div className="mt-6 flex justify-end">
+                    <button onClick={handleSavePermissions} className="px-6 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded font-bold shadow-lg">
+                        Update Access Rules
+                    </button>
+                </div>
+            </div>
+        )}
+
+        {/* SESSION & EXAM TAB */}
+        {activeTab === 'SESSION' && (
+            <div className="space-y-6">
+                
+                {/* Exam List Management */}
+                <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                            <Clock size={20} className="text-purple-600" /> Active Exams
+                        </h3>
+                        <button onClick={handleAddExamTab} className="text-sm bg-purple-100 text-purple-700 px-3 py-1 rounded-full font-bold hover:bg-purple-200 flex items-center gap-1">
+                            <Plus size={14} /> Add Exam
+                        </button>
+                    </div>
+                    
+                    <div className="flex flex-wrap gap-2">
+                        {examList.map(exam => (
+                            <div 
+                                key={exam}
+                                onClick={() => onSelectExam && onSelectExam(exam)}
+                                className={`px-4 py-2 rounded-lg border cursor-pointer flex items-center gap-2 transition-all ${currentExamName === exam ? 'bg-purple-600 text-white border-purple-600 shadow' : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'}`}
+                            >
+                                <span className="font-bold text-sm">{exam}</span>
+                                {examList.length > 1 && (
+                                    <button 
+                                        onClick={(e) => handleDeleteExamTab(e, exam)}
+                                        className="bg-white/20 p-0.5 rounded-full hover:bg-white/40"
+                                    >
+                                        <X size={12} />
+                                    </button>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                    <div className="mt-4 p-3 bg-purple-50 text-purple-800 text-sm rounded border border-purple-100">
+                        Current Active Exam: <span className="font-bold">{currentExamName}</span>
+                    </div>
+                </div>
+
+                {/* Session Years Configuration */}
+                <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                    <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                        <CheckSquare size={20} className="text-teal-600" /> Active Academic Years
+                    </h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {SUBJECT_CONFIG.map(config => {
+                            const isActive = currentSessionYears.includes(config.year);
+                            return (
+                                <div 
+                                    key={config.year} 
+                                    onClick={() => handleToggleSessionYear(config.year)}
+                                    className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${isActive ? 'border-teal-500 bg-teal-50' : 'border-gray-200 bg-white hover:border-gray-300'}`}
+                                >
+                                    <div className="flex items-center justify-between">
+                                        <span className={`font-bold ${isActive ? 'text-teal-700' : 'text-gray-500'}`}>{config.year}</span>
+                                        {isActive ? <CheckSquare size={20} className="text-teal-600" /> : <Square size={20} className="text-gray-300" />}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                {/* Archive Zone */}
+                <div className="bg-red-50 p-6 rounded-xl border border-red-200">
+                    <h3 className="text-lg font-bold text-red-800 mb-4 flex items-center gap-2">
+                        <Archive size={20} /> Archive & Reset Session
+                    </h3>
+                    <p className="text-sm text-red-700 mb-4">
+                        This will move ALL current student records for <b>{currentExamName}</b> to the archive and clear the dashboard for a new session.
+                    </p>
+                    <div className="flex gap-4 items-end">
+                        <div className="flex-1">
+                            <label className="block text-xs font-bold text-red-600 uppercase mb-1">New Session Name</label>
+                            <input 
+                                type="text" 
+                                value={nextExamName}
+                                onChange={(e) => setNextExamName(e.target.value)}
+                                className="w-full p-2 border border-red-300 rounded focus:ring-2 focus:ring-red-500 outline-none"
+                                placeholder="e.g. SUMMER-2025_PHASE-I"
+                            />
+                        </div>
+                        <button 
+                            onClick={handleStartNewSession}
+                            className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded font-bold shadow-lg flex items-center gap-2"
+                        >
+                            <Archive size={18} /> Archive & Start New
+                        </button>
+                    </div>
+                </div>
+
+                {/* Archive History */}
+                <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                    <h3 className="text-lg font-bold text-gray-800 mb-4">Archive History</h3>
+                    <div className="space-y-3">
+                        {archives.length === 0 ? <p className="text-gray-400 italic">No archived sessions found.</p> : 
+                            archives.map(arch => (
+                                <div key={arch.id} className="flex justify-between items-center p-3 border rounded-lg hover:bg-gray-50">
+                                    <div>
+                                        <p className="font-bold text-gray-800">{arch.examName}</p>
+                                        <p className="text-xs text-gray-500">Archived: {arch.archivedDate} • Students: {arch.studentCount}</p>
+                                    </div>
+                                    <button 
+                                        onClick={() => onRestoreArchive(arch)}
+                                        className="text-sm text-blue-600 hover:underline flex items-center gap-1 font-bold"
+                                    >
+                                        <Eye size={14} /> View Data
+                                    </button>
+                                </div>
+                            ))
+                        }
+                    </div>
+                </div>
+            </div>
+        )}
+
+      </div>
     </div>
   );
 };
