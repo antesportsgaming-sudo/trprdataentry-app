@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { FACULTIES } from '../constants';
 import { FacultyUser } from '../types';
 import { Lock, UserCircle, Key } from 'lucide-react';
+import { fetchAccessConfig } from '../services/firestore';
 
 interface LoginProps {
   onLogin: (user: FacultyUser) => void;
@@ -12,37 +13,56 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [selectedId, setSelectedId] = useState(FACULTIES[0].id);
   const [password, setPassword] = useState('');
   const [allowedIds, setAllowedIds] = useState<string[]>(['medical']);
+  const [dbPasswords, setDbPasswords] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
 
-  // Load allowed faculties from localStorage
+  // Load allowed faculties and passwords from Firestore
   useEffect(() => {
-      const savedAccess = localStorage.getItem('allowed_faculties');
-      if (savedAccess) {
-          const ids = JSON.parse(savedAccess);
-          // Ensure Medical is always allowed as fallback
-          if (!ids.includes('medical')) ids.push('medical');
-          setAllowedIds(ids);
-      } else {
-          // Default state if nothing saved: Only Medical allowed (until Admin gives permission)
-          setAllowedIds(['medical']);
-      }
+      const loadConfig = async () => {
+          try {
+              setLoading(true);
+              const config = await fetchAccessConfig();
+              // Ensure Medical is always allowed as fallback
+              const ids = config.allowedIds.includes('medical') ? config.allowedIds : [...config.allowedIds, 'medical'];
+              
+              setAllowedIds(ids);
+              setDbPasswords(config.passwords);
+              
+              // Cache for offline safety (optional, but good for UX)
+              localStorage.setItem('allowed_faculties', JSON.stringify(ids));
+          } catch (e) {
+              console.error("Failed to load login config", e);
+              // Fallback to local storage if offline
+              const savedAccess = localStorage.getItem('allowed_faculties');
+              if (savedAccess) {
+                  setAllowedIds(JSON.parse(savedAccess));
+              }
+          } finally {
+              setLoading(false);
+          }
+      };
+      loadConfig();
   }, []);
 
   // Filter the full list based on allowed IDs
   const visibleFaculties = FACULTIES.filter(f => allowedIds.includes(f.id));
 
-  // Reset selectedId if it's not in the visible list anymore (unless it's loading initial state)
+  // Reset selectedId if it's not in the visible list anymore
   useEffect(() => {
-      if (visibleFaculties.length > 0 && !visibleFaculties.find(f => f.id === selectedId)) {
+      if (!loading && visibleFaculties.length > 0 && !visibleFaculties.find(f => f.id === selectedId)) {
           setSelectedId(visibleFaculties[0].id);
       }
-  }, [visibleFaculties, selectedId]);
+  }, [loading, visibleFaculties, selectedId]);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    if (password !== '1234') {
+    // Fetch password from DB map, default to '1234' if not set
+    const targetPassword = dbPasswords[selectedId] || '1234';
+
+    if (password !== targetPassword) {
         setError('Invalid Password. Please try again.');
         return;
     }
@@ -52,6 +72,14 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
       onLogin(user);
     }
   };
+
+  if (loading) {
+      return (
+          <div className="min-h-screen flex items-center justify-center bg-gray-100">
+              <div className="text-gray-500 font-medium animate-pulse">Loading Access Control...</div>
+          </div>
+      );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100">

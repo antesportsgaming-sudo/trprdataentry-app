@@ -62,6 +62,19 @@ const Dashboard: React.FC<DashboardProps> = ({ students, onAdd, onEdit, onDelete
             })
          ).join('; ');
 
+         const payments = s.payments || (s.studentPayFees > 0 ? [{
+             amount: s.studentPayFees,
+             ddNo: s.ddNo,
+             ddDate: s.ddDate,
+             bankName: s.bankName
+         }] : []);
+
+         // Map Payments to a string format for Excel cells
+         const ddNos = payments.map(p => p.ddNo).join(' | ');
+         const ddDates = payments.map(p => p.ddDate).join(' | ');
+         const banks = payments.map(p => p.bankName).join(' | ');
+         const amounts = payments.map(p => p.amount).join(' + ');
+
          return {
              'Sr. No': index + 1,
              'College Code': s.collegeCode,
@@ -73,9 +86,10 @@ const Dashboard: React.FC<DashboardProps> = ({ students, onAdd, onEdit, onDelete
              'Total Fees': s.totalFees,
              'Paid Fees': s.studentPayFees,
              'Pending Fees': s.pendingFees,
-             'DD/Trans ID': s.ddNo,
-             'DD Date': s.ddDate,
-             'Bank': s.bankName,
+             'DD/Trans ID': ddNos,
+             'DD Date': ddDates,
+             'Bank': banks,
+             'Amounts Breakdown': amounts,
              'Inward No': s.inwardNo,
              'Inward Date': s.inwardDate,
              'Remark': s.remark

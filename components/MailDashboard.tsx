@@ -376,7 +376,7 @@ const MailDashboard: React.FC<MailDashboardProps> = ({
                     <div className="text-sm text-gray-500 bg-blue-50 px-4 py-2 rounded-lg border border-blue-100">
                         <span className="font-bold text-blue-800">Direct Send Status: </span> 
                         {isDirectSendConfigured ? 
-                            <span className="text-green-600 font-bold">Active (Click 'View' then 'Send Direct Mail')</span> : 
+                            <span className="text-green-600 font-bold">Active (Ready to Send)</span> : 
                             <span className="text-red-600 font-bold">Inactive (Configure in Admin &gt; Settings)</span>
                         }
                     </div>
@@ -390,22 +390,12 @@ const MailDashboard: React.FC<MailDashboardProps> = ({
                                     <th className="px-6 py-4 text-xs font-bold text-gray-900 uppercase tracking-wider w-24">Code</th>
                                     <th className="px-6 py-4 text-xs font-bold text-gray-900 uppercase tracking-wider">College Name</th>
                                     
-                                    <th className="px-4 py-4 text-xs font-bold text-center text-orange-700 uppercase tracking-wider border-l border-gray-200 w-32">
-                                        Discrepancy<br/>(TR/PR)
-                                    </th>
-                                    <th className="px-4 py-4 text-xs font-bold text-center text-orange-800 uppercase tracking-wider w-32">
-                                        Discrepancy<br/>(Photo)
-                                    </th>
-                                    
                                     <th className="px-4 py-4 text-xs font-bold text-center text-emerald-700 uppercase tracking-wider border-l border-gray-200 w-32">
-                                        Letter<br/>(TR/PR)
-                                    </th>
-                                    <th className="px-4 py-4 text-xs font-bold text-center text-emerald-800 uppercase tracking-wider w-32">
-                                        Letter<br/>(Photo)
+                                        Letters<br/>(Preview)
                                     </th>
                                     
-                                    <th className="px-4 py-4 text-xs font-bold text-center text-violet-700 uppercase tracking-wider border-l border-gray-200 w-32">
-                                        Credit Note
+                                    <th className="px-4 py-4 text-xs font-bold text-center text-blue-700 uppercase tracking-wider border-l border-gray-200 w-32 bg-blue-50">
+                                        Direct Mail<br/>(One-Click)
                                     </th>
                                     
                                     <th className="px-6 py-4 text-xs font-bold text-center text-gray-900 uppercase tracking-wider border-l border-gray-200 w-32">Manual Action</th>
@@ -413,12 +403,8 @@ const MailDashboard: React.FC<MailDashboardProps> = ({
                             </thead>
                             <tbody className="divide-y divide-gray-100">
                                 {collegeGroups.map((group) => {
-                                    const hasDiscrepancyTR = group.trPrStudents.some(s => s.pendingFees > 0);
-                                    const hasDiscrepancyPhoto = group.photoStudents.some(s => s.pendingFees > 0);
                                     const hasLetterTR = group.trPrStudents.some(s => s.pendingFees <= 0);
-                                    const hasLetterPhoto = group.photoStudents.some(s => s.pendingFees <= 0);
-                                    const hasPayments = group.allStudents.some(s => s.studentPayFees > 0);
-
+                                    
                                     return (
                                     <tr key={group.code} className="hover:bg-gray-50 transition-colors">
                                         <td className="px-6 py-4 font-mono font-bold text-gray-600">{group.code}</td>
@@ -434,68 +420,46 @@ const MailDashboard: React.FC<MailDashboardProps> = ({
                                         </td>
                                         
                                         <td className="px-4 py-4 text-center border-l border-gray-50">
-                                            {hasDiscrepancyTR ? (
-                                                <button 
-                                                    onClick={() => handlePreview('DISCREPANCY_TR', group.code)}
-                                                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-white border border-orange-200 text-orange-700 rounded-md hover:bg-orange-50 text-xs font-bold shadow-sm transition-all"
-                                                >
-                                                    <Printer size={12} /> View/Print
-                                                </button>
-                                            ) : <span className="text-gray-300 text-xs">-</span>}
-                                        </td>
-
-                                        <td className="px-4 py-4 text-center">
-                                            {hasDiscrepancyPhoto ? (
-                                                <button 
-                                                    onClick={() => handlePreview('DISCREPANCY_PHOTO', group.code)}
-                                                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-white border border-orange-200 text-orange-800 rounded-md hover:bg-orange-50 text-xs font-bold shadow-sm transition-all"
-                                                >
-                                                    <Printer size={12} /> View/Print
-                                                </button>
-                                            ) : <span className="text-gray-300 text-xs">-</span>}
-                                        </td>
-
-                                        <td className="px-4 py-4 text-center border-l border-gray-50">
-                                            {hasLetterTR ? (
+                                            <div className="flex flex-col gap-1 items-center">
                                                 <button 
                                                     onClick={() => handlePreview('COVER_TR', group.code)}
-                                                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-white border border-emerald-200 text-emerald-700 rounded-md hover:bg-emerald-50 text-xs font-bold shadow-sm transition-all"
+                                                    className="inline-flex items-center gap-1 px-2 py-1 bg-white border border-gray-200 text-gray-600 rounded hover:bg-gray-100 text-[10px] font-bold shadow-sm transition-all"
                                                 >
-                                                    <Printer size={12} /> View/Print
+                                                    <Printer size={10} /> Letter (TR/PR)
                                                 </button>
-                                            ) : <span className="text-gray-300 text-xs">-</span>}
-                                        </td>
-
-                                        <td className="px-4 py-4 text-center">
-                                            {hasLetterPhoto ? (
                                                 <button 
                                                     onClick={() => handlePreview('COVER_PHOTO', group.code)}
-                                                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-white border border-emerald-200 text-emerald-800 rounded-md hover:bg-emerald-50 text-xs font-bold shadow-sm transition-all"
+                                                    className="inline-flex items-center gap-1 px-2 py-1 bg-white border border-gray-200 text-gray-600 rounded hover:bg-gray-100 text-[10px] font-bold shadow-sm transition-all"
                                                 >
-                                                    <Printer size={12} /> View/Print
+                                                    <Printer size={10} /> Letter (Photo)
                                                 </button>
-                                            ) : <span className="text-gray-300 text-xs">-</span>}
+                                            </div>
                                         </td>
-                                        
-                                        <td className="px-4 py-4 text-center border-l border-gray-50">
-                                            {hasPayments ? (
+
+                                        {/* Direct Mail Column */}
+                                        <td className="px-4 py-4 text-center border-l border-gray-50 bg-blue-50/30">
+                                            {group.email ? (
                                                 <button 
-                                                    onClick={() => handlePreview('CREDIT_NOTE', group.code)}
-                                                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-white border border-violet-200 text-violet-700 rounded-md hover:bg-violet-50 text-xs font-bold shadow-sm transition-all"
+                                                    onClick={() => handlePreview('COVER_TR', group.code)}
+                                                    className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold shadow-md transition-all ${isDirectSendConfigured ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
+                                                    disabled={!isDirectSendConfigured}
+                                                    title={!isDirectSendConfigured ? "Configure EmailJS in Admin Panel first" : "Opens preview to send mail"}
                                                 >
-                                                    <Receipt size={12} /> View/Print
+                                                    <Send size={14} /> Send PDF
                                                 </button>
-                                            ) : <span className="text-gray-300 text-xs">-</span>}
+                                            ) : (
+                                                <span className="text-xs text-gray-400 italic">Add Email in Admin</span>
+                                            )}
                                         </td>
 
                                         <td className="px-6 py-4 text-center border-l border-gray-50">
                                             <button 
                                                 onClick={() => handleManualMail(group.email, group.code, group.name)}
-                                                className="inline-flex items-center gap-1 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-xs font-bold shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                                className="inline-flex items-center gap-1 px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-xs font-bold shadow-sm transition-all"
                                                 disabled={!group.email}
                                                 title={!group.email ? "Upload email in Admin first" : "Open Outlook/Gmail manually"}
                                             >
-                                                <ExternalLink size={12} /> Manual Mail
+                                                <ExternalLink size={12} /> Manual
                                             </button>
                                         </td>
                                     </tr>

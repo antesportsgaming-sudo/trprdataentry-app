@@ -1,3 +1,4 @@
+
 export interface SubjectSelection {
   subjectName: string;
   papers: {
@@ -12,6 +13,13 @@ export interface SubjectSelection {
 export interface YearSelection {
   yearName: string; // e.g., "I - MBBS", "II-MBBS"
   subjects: SubjectSelection[];
+}
+
+export interface PaymentRecord {
+  amount: number;
+  ddNo: string; // or Transaction ID
+  ddDate: string;
+  bankName: string;
 }
 
 export interface StudentEntry {
@@ -37,10 +45,15 @@ export interface StudentEntry {
   totalSubjects: number;
   totalFees: number;
   pendingFees: number;
-  studentPayFees: number;
-  ddNo: string; // or Online Payment ID
+  
+  // Legacy Fields (kept for backward compatibility, but UI uses 'payments' array)
+  studentPayFees: number; 
+  ddNo: string; 
   ddDate: string;
   bankName: string;
+
+  // New Multi-Payment Field
+  payments: PaymentRecord[];
 
   // Office Use
   dispatchDate: string;
@@ -84,6 +97,7 @@ export interface LetterSettings {
   officerDesigEn: string;
   officerDeptEn: string;
   signatureImage?: string; // Base64 string for signature
+  universityLogo?: string; // Base64 string for university logo
   
   // EmailJS Configuration (Next Level Feature)
   emailServiceId?: string;

@@ -3,12 +3,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { MasterRecord, CollegeAddressRecord, LetterSettings, FacultyUser, ArchivedSession, StudentEntry } from '../types';
 import { FACULTIES, SUBJECT_CONFIG, createEmptyStudent } from '../constants';
-import { Upload, Database, CheckCircle, AlertCircle, FileSpreadsheet, MapPin, Settings, Save, Users, Lock, Archive, RefreshCw, Eye, PenTool, CheckSquare, Square, UploadCloud, Mail, Download, FileJson, ArrowRightCircle, Clock } from 'lucide-react';
+import { Upload, Database, CheckCircle, AlertCircle, FileSpreadsheet, MapPin, Settings, Save, Users, Lock, Archive, RefreshCw, Eye, PenTool, CheckSquare, Square, UploadCloud, Mail, Download, FileJson, ArrowRightCircle, Clock, Clipboard, CheckCircle2, Plus, X, Key, Image } from 'lucide-react';
 import { 
     uploadMasterRecordsBatch, 
     uploadAddressesBatch, 
-    saveAllowedFaculties, 
-    fetchAllowedFaculties,
+    fetchAccessConfig,
+    saveAccessConfig,
     fetchAllStudentsForBackup,
     restoreBackupBatch
 } from '../services/firestore';
@@ -28,6 +28,10 @@ interface AdminPanelProps {
   archives: ArchivedSession[];
   onArchiveAndReset: (newExamName: string) => void;
   onRestoreArchive: (session: ArchivedSession) => void;
+  // New Props for Multiple Exams
+  examList?: string[];
+  onUpdateExamList?: (list: string[]) => void;
+  onSelectExam?: (name: string) => void;
 }
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ 
@@ -43,7 +47,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     onUpdateSessionYears,
     archives,
     onArchiveAndReset,
-    onRestoreArchive
+    onRestoreArchive,
+    examList = [],
+    onUpdateExamList,
+    onSelectExam
 }) => {
   const [activeTab, setActiveTab] = useState<'MASTER' | 'ADDRESS' | 'SETTINGS' | 'ACCESS' | 'SESSION'>('MASTER');
   const [loading, setLoading] = useState(false);
@@ -51,6 +58,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [previewData, setPreviewData] = useState<any[]>([]);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadStats, setUploadStats] = useState({ processed: 0, total: 0 }); // New State for Live Count
+  
+  // Paste Data State
+  const [pasteData, setPasteData] = useState('');
   
   // Timer State
   const [estimatedTime, setEstimatedTime] = useState<string>('Calculating...');
@@ -60,6 +71,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
 
   // Access Control State
   const [allowedFaculties, setAllowedFaculties] = useState<string[]>(['medical']);
+  const [passwords, setPasswords] = useState<Record<string, string>>({});
 
   // Session State
   const [nextExamName, setNextExamName] = useState('SUMMER-2025_PHASE-IV');
@@ -73,8 +85,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   useEffect(() => {
       const loadPermissions = async () => {
           try {
-              const ids = await fetchAllowedFaculties();
-              setAllowedFaculties(ids);
+              const config = await fetchAccessConfig();
+              setAllowedFaculties(config.allowedIds);
+              setPasswords(config.passwords);
           } catch (e) {
               console.error("Failed to load permissions", e);
           }
@@ -90,7 +103,9 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     setSuccessMsg(null);
     setPreviewData([]);
     setUploadProgress(0);
+    setUploadStats({ processed: 0, total: 0 });
     setEstimatedTime('');
+    setPasteData('');
   };
 
   const handleTabChange = (tab: 'MASTER' | 'ADDRESS' | 'SETTINGS' | 'ACCESS' | 'SESSION') => {
@@ -127,9 +142,37 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     }));
   };
 
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            setSettingsForm(prev => ({
+                ...prev,
+                universityLogo: ev.target?.result as string
+            }));
+        };
+        reader.readAsDataURL(file);
+    }
+  };
+
+  const handleRemoveLogo = () => {
+    setSettingsForm(prev => ({
+        ...prev,
+        universityLogo: ''
+    }));
+  };
+
   const handleSaveSettings = () => {
       onSettingsSaved(settingsForm);
       setSuccessMsg("Letter configuration saved to cloud successfully.");
+      setTimeout(() => setSuccessMsg(null), 3000);
+  };
+
+  // Specific handler just for email keys to reassure user
+  const handleSaveEmailKeys = () => {
+      onSettingsSaved(settingsForm);
+      setSuccessMsg("✅ Email Keys Saved Permanently for Medical Faculty.");
       setTimeout(() => setSuccessMsg(null), 3000);
   };
 
@@ -144,13 +187,20 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
       });
   };
 
+  const handlePasswordChange = (facultyId: string, val: string) => {
+      setPasswords(prev => ({
+          ...prev,
+          [facultyId]: val
+      }));
+  };
+
   const handleSavePermissions = async () => {
       try {
-        await saveAllowedFaculties(allowedFaculties);
-        setSuccessMsg("User access permissions synced to cloud.");
+        await saveAccessConfig(allowedFaculties, passwords);
+        setSuccessMsg("Permissions & Passwords updated successfully.");
         setTimeout(() => setSuccessMsg(null), 3000);
       } catch (e) {
-          setError("Failed to save permissions.");
+          setError("Failed to save configuration.");
       }
   };
 
@@ -175,6 +225,29 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
+  // --- Exam Tabs Handlers ---
+  const handleAddExamTab = () => {
+      const name = prompt("Enter New Exam Name (e.g. WINTER-2025_PHASE-I):");
+      if (name && name.trim()) {
+          const newList = [...examList, name.trim()];
+          if (onUpdateExamList) onUpdateExamList(newList);
+          if (onSelectExam) onSelectExam(name.trim()); // Switch to it
+      }
+  };
+
+  const handleDeleteExamTab = (e: React.MouseEvent, nameToDelete: string) => {
+      e.stopPropagation(); // Prevent selection
+      if (!confirm(`Remove "${nameToDelete}" from the list? Data will not be deleted, but the tab will vanish.`)) return;
+      
+      const newList = examList.filter(n => n !== nameToDelete);
+      if (onUpdateExamList) onUpdateExamList(newList);
+      
+      // If we deleted the active one, select the first one available
+      if (currentExamName === nameToDelete && newList.length > 0 && onSelectExam) {
+          onSelectExam(newList[0]);
+      }
+  };
+
   // --- Helper: Time Formatter ---
   const formatTime = (seconds: number) => {
       if (seconds < 0) return "Finishing...";
@@ -190,6 +263,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
           // 1. Update Percentage
           const pct = Math.round((processed / total) * 100);
           setUploadProgress(pct);
+          setUploadStats({ processed, total }); // LIVE COUNT UPDATE
 
           // 2. Calculate Time Remaining
           const now = Date.now();
@@ -237,6 +311,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
       reader.onload = (event) => {
           setLoading(true); // Immediate UI feedback
           setUploadProgress(0);
+          setUploadStats({ processed: 0, total: 0 });
           setEstimatedTime('Calculating...');
           setError(null);
           
@@ -247,10 +322,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                   const data = JSON.parse(jsonStr);
                   if (!Array.isArray(data)) throw new Error("Invalid JSON format. Expected an array.");
                   
+                  // LIVE COUNT INIT
+                  setUploadStats({ processed: 0, total: data.length });
+
                   const startTime = Date.now();
                   await restoreBackupBatch(currentUser.id, data, createProgressCallback(startTime));
                   
-                  setSuccessMsg(`Success! ${data.length} records restored. (सर्व डेटा परत आला आहे. डॅशबोर्ड चेक करा.)`);
+                  setSuccessMsg(`✅ DONE! ${data.length} records restored. (सर्व डेटा परत आला आहे.)`);
               } catch (e: any) {
                   if (e.code === 'permission-denied') {
                       setError("Permission Denied: Database is locked. Check Firestore Rules.");
@@ -290,6 +368,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
       reader.onload = (event) => {
         setLoading(true);
         setUploadProgress(0);
+        setUploadStats({ processed: 0, total: 0 });
         setEstimatedTime('Calculating...');
         setError(null);
         setSuccessMsg(null);
@@ -334,11 +413,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                     `);
                 }
 
+                // LIVE COUNT INIT
+                setUploadStats({ processed: 0, total: studentsToUpload.length });
+
                 // Use the Restore function because it does exactly what we want: Bulk Upload StudentEntry[]
                 const startTime = Date.now();
                 await restoreBackupBatch(currentUser.id, studentsToUpload, createProgressCallback(startTime));
 
-                setSuccessMsg(`Successfully imported ${studentsToUpload.length} students from Excel into the active session.`);
+                setSuccessMsg(`✅ DONE! Imported ${studentsToUpload.length} students from Excel.`);
 
             } catch (err: any) {
                 console.error("Import Error:", err);
@@ -365,6 +447,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     reader.onload = (event) => {
       setLoading(true);
       setUploadProgress(0);
+      setUploadStats({ processed: 0, total: 0 });
       setEstimatedTime('Calculating...');
       setError(null);
       setSuccessMsg(null);
@@ -390,13 +473,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                 const firstRowKeys = jsonData.length > 0 ? Object.keys(jsonData[0] as object).join(', ') : 'Empty File';
                 setError(`No valid records. Excel must have 'Seat No' and 'Student Name'. Found: [${firstRowKeys}]`);
             } else {
+            // LIVE COUNT INIT
+            setUploadStats({ processed: 0, total: normalizedData.length });
+
             // Upload to Firestore
             const startTime = Date.now();
             await uploadMasterRecordsBatch(currentUser.id, normalizedData, createProgressCallback(startTime));
             
             setPreviewData(normalizedData);
             onDataLoaded(normalizedData); // Update local state for immediate feedback
-            setSuccessMsg(`Successfully uploaded ${normalizedData.length} student records to Cloud Database. (अपलोड यशस्वी!)`);
+            setSuccessMsg(`✅ DONE! Successfully uploaded ${normalizedData.length} student records.`);
             }
         } catch (err: any) {
             console.error("Master Upload Error:", err);
@@ -414,6 +500,72 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     reader.readAsArrayBuffer(file);
   };
 
+  const handlePasteMasterData = () => {
+      if (!pasteData.trim()) return;
+      
+      setLoading(true);
+      setUploadProgress(0);
+      setUploadStats({ processed: 0, total: 0 });
+      setEstimatedTime('Calculating...');
+      setError(null);
+      setSuccessMsg(null);
+
+      // Async wrapper
+      setTimeout(async () => {
+        try {
+            const rawRows = pasteData.trim().split(/\r?\n/); // Handle CR LF
+            if (rawRows.length < 2) {
+                throw new Error("Data too short. Please include headers in the first row.");
+            }
+
+            const headers = rawRows[0].split('\t').map(h => h.trim());
+            const dataRows = rawRows.slice(1);
+
+            const jsonData = dataRows.map(rowStr => {
+                const cells = rowStr.split('\t');
+                const obj: any = {};
+                headers.forEach((h, i) => {
+                    if (cells[i] !== undefined) obj[h] = cells[i].trim();
+                });
+                return obj;
+            });
+            
+             // Normalize Data
+            const normalizedData: MasterRecord[] = jsonData.map((row: any) => ({
+                seatNo: String(getFlexibleValue(row, ['Seat No', 'seat_no', 'SEAT NO', 'Seat_No', 'SeatNo', 'Seat Number', 'Seat No.']) || '').trim(),
+                studentName: String(getFlexibleValue(row, ['Student Name', 'student_name', 'NAME', 'Student_Name', 'StudentName', 'Name', 'Student Name']) || '').trim(),
+                collegeCode: String(getFlexibleValue(row, ['College Code', 'college_code', 'CODE', 'College_Code', 'CollegeCode', 'C_Code']) || '').trim(),
+                collegeName: String(getFlexibleValue(row, ['College Name', 'college_name', 'COLLEGE', 'College_Name', 'CollegeName', 'Name of College']) || '').trim()
+            })).filter(r => r.seatNo && r.studentName);
+
+            if (normalizedData.length === 0) {
+                 setError(`No valid records parsed. Ensure headers (Seat No, Student Name) are correct.`);
+            } else {
+                 // LIVE COUNT INIT
+                 setUploadStats({ processed: 0, total: normalizedData.length });
+
+                 const startTime = Date.now();
+                 await uploadMasterRecordsBatch(currentUser.id, normalizedData, createProgressCallback(startTime));
+                 
+                 setPreviewData(normalizedData);
+                 onDataLoaded(normalizedData);
+                 setSuccessMsg(`✅ DONE! Successfully processed and uploaded ${normalizedData.length} records.`);
+                 setPasteData('');
+            }
+
+        } catch (err: any) {
+            console.error("Paste Error:", err);
+            if (err.code === 'permission-denied') {
+                setError("Permission Error: Cannot write to Database.");
+            } else {
+                setError(`Paste Process Failed: ${err.message}`);
+            }
+        } finally {
+            setLoading(false);
+        }
+      }, 50);
+  };
+
   const handleAddressFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     const inputElement = e.target;
@@ -423,6 +575,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
     reader.onload = (event) => {
       setLoading(true);
       setUploadProgress(0);
+      setUploadStats({ processed: 0, total: 0 });
       setEstimatedTime('Calculating...');
       setError(null);
       setSuccessMsg(null);
@@ -436,22 +589,26 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
             const jsonData = XLSX.utils.sheet_to_json(sheet);
 
             // Normalize Data for Addresses
+            // Improved flexible parsing for email
             const normalizedData: CollegeAddressRecord[] = jsonData.map((row: any) => ({
             collegeCode: String(getFlexibleValue(row, ['College Code', 'college_code', 'CODE', 'code', 'C_Code', 'Center Code']) || '').trim(),
             address: String(getFlexibleValue(row, ['Address', 'address', 'College Address', 'addr', 'LOCATION', 'Coll_Address']) || '').trim(),
-            email: String(getFlexibleValue(row, ['Email', 'email', 'E-mail', 'EMAIL', 'mail', 'Email_Id', 'EmailId']) || '').trim()
-            })).filter(r => r.collegeCode && r.address);
+            email: String(getFlexibleValue(row, ['Email', 'email', 'E-mail', 'EMAIL', 'mail', 'Email_Id', 'EmailId', 'Email ID']) || '').trim()
+            })).filter(r => r.collegeCode && (r.address || r.email));
 
             if (normalizedData.length === 0) {
             setError("No valid address records found. Ensure Excel has 'College Code' and 'Address'.");
             } else {
+            // LIVE COUNT INIT
+            setUploadStats({ processed: 0, total: normalizedData.length });
+
             // Upload to Firestore
             const startTime = Date.now();
             await uploadAddressesBatch(currentUser.id, normalizedData, createProgressCallback(startTime));
 
             setPreviewData(normalizedData);
             onAddressDataLoaded(normalizedData);
-            setSuccessMsg(`Successfully uploaded ${normalizedData.length} college addresses to Cloud Database.`);
+            setSuccessMsg(`✅ DONE! Successfully synced ${normalizedData.length} address records.`);
             }
         } catch (err: any) {
             console.error("Address Upload Error:", err);
@@ -497,6 +654,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
 
       <div className="bg-white p-8 rounded-b-xl shadow-md border border-gray-200 border-t-0 mt-0">
         
+        {/* ... MASTER, ADDRESS, SETTINGS, SESSION Tabs ... (Hidden to save tokens, unchanged) */}
         {activeTab === 'MASTER' && (
           <>
             <h2 className="text-xl font-bold text-gray-800 mb-2">Student Data Upload</h2>
@@ -506,18 +664,53 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
             </p>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {/* Upload Area */}
-                <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 flex flex-col items-center justify-center text-center hover:bg-gray-50 transition-colors">
-                    <UploadCloud size={48} className="text-blue-600 mb-4" />
-                    <label className="cursor-pointer">
-                        <span className="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors inline-block mb-2">
-                            Select Master File (Excel/CSV)
-                        </span>
-                        <input type="file" className="hidden" accept=".xlsx, .xls, .csv" onChange={handleMasterFileUpload} />
-                    </label>
-                    <p className="text-xs text-gray-400 mt-2">Supported formats: .csv, .xlsx, .xls</p>
-                    <p className="text-xs text-gray-400 mt-1">Required: Seat No, Student Name, College Code, College Name</p>
+                {/* Upload Column with 2 Options */}
+                <div className="space-y-6">
+                    {/* Option 1: File */}
+                    <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 flex flex-col items-center justify-center text-center hover:bg-gray-50 transition-colors relative">
+                        <span className="absolute top-0 left-0 bg-gray-100 text-gray-500 text-xs px-2 py-1 rounded-br-lg font-bold">Option 1: File Upload</span>
+                        <UploadCloud size={48} className="text-blue-600 mb-4" />
+                        <label className="cursor-pointer">
+                            <span className="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors inline-block mb-2">
+                                Select Master File (Excel/CSV)
+                            </span>
+                            <input type="file" className="hidden" accept=".xlsx, .xls, .csv" onChange={handleMasterFileUpload} />
+                        </label>
+                        <p className="text-xs text-gray-400 mt-2">Supported formats: .csv, .xlsx, .xls</p>
+                        <p className="text-xs text-gray-400 mt-1">Required: Seat No, Student Name, College Code, College Name</p>
+                    </div>
+
+                     <div className="flex items-center justify-center">
+                         <div className="h-px bg-gray-300 flex-1"></div>
+                         <span className="px-3 text-sm text-gray-400 font-bold">OR</span>
+                         <div className="h-px bg-gray-300 flex-1"></div>
+                    </div>
+
+                     {/* Option 2: Paste */}
+                     <div className="border-2 border-dashed border-blue-200 bg-blue-50/30 rounded-xl p-6 relative">
+                        <span className="absolute top-0 left-0 bg-blue-100 text-blue-600 text-xs px-2 py-1 rounded-br-lg font-bold">Option 2: Copy-Paste</span>
+                        <label className="block text-sm font-bold text-blue-900 mb-2 flex items-center gap-2">
+                             <Clipboard size={16} /> Paste Data from Excel
+                        </label>
+                        <textarea
+                             value={pasteData}
+                             onChange={(e) => setPasteData(e.target.value)}
+                             className="w-full h-40 p-3 text-xs font-mono border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none resize-none bg-white placeholder-gray-400"
+                             placeholder={`Seat No\tStudent Name\tCollege Code\tCollege Name\n12345\tRahul Patil\t1201\tBJ Medical...`}
+                        />
+                        <button 
+                            onClick={handlePasteMasterData}
+                            disabled={loading || !pasteData.trim()}
+                            className="w-full mt-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                        >
+                             <Database size={16} /> Process & Upload Pasted Data
+                        </button>
+                        <p className="text-[10px] text-blue-600 mt-2 text-center">
+                            Copy data from Excel (including headers) and paste here.
+                        </p>
+                    </div>
                 </div>
+
                 {/* Status Area */}
                 <div className="bg-gray-50 rounded-xl p-6 border border-gray-200">
                     <h3 className="font-semibold text-gray-700 mb-4">Master Data Status</h3>
@@ -540,6 +733,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                                 <div className="w-full bg-gray-200 rounded-full h-2">
                                     <div className="bg-blue-600 h-2 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }}></div>
                                 </div>
+                                <div className="flex justify-between items-center mt-3 bg-blue-50 p-2 rounded border border-blue-200">
+                                    <span className="text-xs text-gray-500 font-bold uppercase">Live Progress</span>
+                                    <span className="text-base font-bold text-blue-700 font-mono">
+                                        {uploadStats.processed} <span className="text-gray-400 text-xs">/</span> {uploadStats.total}
+                                    </span>
+                                </div>
                                 <p className="text-xs text-gray-400 mt-1 text-center">Please wait, do not close.</p>
                             </div>
                         )}
@@ -549,7 +748,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                                 {error}
                             </div>
                         )}
-                        {successMsg && <div className="flex items-start gap-2 text-green-600 text-sm bg-green-50 p-3 rounded-lg"><CheckCircle size={16} className="mt-0.5 shrink-0" />{successMsg}</div>}
+                        {successMsg && <div className="flex items-center gap-2 text-green-700 font-bold text-sm bg-green-50 p-4 rounded-lg border border-green-200 shadow-sm"><CheckCircle2 size={24} className="text-green-600" />{successMsg}</div>}
                     </div>
                 </div>
             </div>
@@ -558,9 +757,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
 
         {activeTab === 'ADDRESS' && (
           <>
-            <h2 className="text-xl font-bold text-gray-800 mb-2">College Address Upload</h2>
-            <p className="text-gray-500 mb-8">
-              Upload an Excel/CSV file containing college addresses and emails.
+            <h2 className="text-xl font-bold text-gray-800 mb-2">College Address & Email Upload</h2>
+            <p className="text-sm text-gray-500 mb-4 bg-yellow-50 p-3 rounded-lg border border-yellow-200">
+              <b>Permanent Storage:</b> Addresses uploaded here are saved permanently to the Cloud. 
+              You do <b>NOT</b> need to re-upload them every time. Upload again only to add <b>new colleges</b> or <b>update</b> emails.
             </p>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -574,7 +774,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                         <input type="file" className="hidden" accept=".xlsx, .xls, .csv" onChange={handleAddressFileUpload} />
                     </label>
                     <p className="text-xs text-gray-400 mt-2">Supported formats: .csv, .xlsx, .xls</p>
-                    <p className="text-xs text-gray-400 mt-1">Required: College Code, Address (Optional: Email)</p>
+                    <p className="text-xs text-gray-400 mt-1 font-bold">Columns: College Code, Address, Email ID</p>
                 </div>
                 {/* Status Area */}
                 <div className="bg-gray-50 rounded-xl p-6 border border-gray-200">
@@ -598,6 +798,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                                 <div className="w-full bg-gray-200 rounded-full h-2">
                                     <div className="bg-blue-600 h-2 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }}></div>
                                 </div>
+                                 <div className="flex justify-between items-center mt-3 bg-blue-50 p-2 rounded border border-blue-200">
+                                    <span className="text-xs text-gray-500 font-bold uppercase">Live Progress</span>
+                                    <span className="text-base font-bold text-blue-700 font-mono">
+                                        {uploadStats.processed} <span className="text-gray-400 text-xs">/</span> {uploadStats.total}
+                                    </span>
+                                </div>
                             </div>
                         )}
                         {error && (
@@ -606,25 +812,32 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                                 {error}
                             </div>
                         )}
-                        {successMsg && <div className="flex items-start gap-2 text-green-600 text-sm bg-green-50 p-3 rounded-lg"><CheckCircle size={16} className="mt-0.5 shrink-0" />{successMsg}</div>}
+                        {successMsg && <div className="flex items-center gap-2 text-green-700 font-bold text-sm bg-green-50 p-4 rounded-lg border border-green-200 shadow-sm"><CheckCircle2 size={24} className="text-green-600" />{successMsg}</div>}
                     </div>
                 </div>
             </div>
           </>
         )}
 
-        {/* SETTINGS, ACCESS tabs remain the same (removed for brevity as no changes needed there) */}
-        
+        {/* SETTINGS, SESSION Tabs remain the same... (Hidden to save tokens) */}
         {activeTab === 'SETTINGS' && (
              <>
                 <h2 className="text-xl font-bold text-gray-800 mb-2">Letter Configuration</h2>
                 {successMsg && <div className="mb-4 flex items-start gap-2 text-green-600 text-sm bg-green-50 p-3 rounded-lg"><CheckCircle size={16} className="mt-0.5 shrink-0" />{successMsg}</div>}
                  
                  {/* Email Configuration Section */}
-                 <div className="mb-8 bg-blue-50 p-6 rounded-xl border border-blue-200">
-                    <h3 className="font-bold text-blue-900 mb-4 flex items-center gap-2">
-                        <Mail size={18} /> Automatic Email Configuration (EmailJS)
-                    </h3>
+                 <div className="mb-8 bg-blue-50 p-6 rounded-xl border border-blue-200 shadow-sm">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="font-bold text-blue-900 flex items-center gap-2">
+                            <Mail size={18} /> Automatic Email Configuration (EmailJS)
+                        </h3>
+                        <button 
+                            onClick={handleSaveEmailKeys}
+                            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm flex items-center gap-2"
+                        >
+                            <Save size={14} /> Save Email Keys
+                        </button>
+                    </div>
                     <p className="text-xs text-blue-700 mb-4">
                         Configure this to enable "Direct Send" from your own faculty email. 
                         Sign up at <a href="https://www.emailjs.com/" target="_blank" className="underline font-bold">emailjs.com</a>, 
@@ -633,15 +846,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
                              <label className="block text-xs font-bold text-blue-800 mb-1">Service ID</label>
-                             <input type="text" name="emailServiceId" value={settingsForm.emailServiceId} onChange={handleSettingsChange} className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="e.g. service_xyz" />
+                             <input type="text" name="emailServiceId" value={settingsForm.emailServiceId || ''} onChange={handleSettingsChange} className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="e.g. service_xyz" />
                         </div>
                         <div>
                              <label className="block text-xs font-bold text-blue-800 mb-1">Template ID</label>
-                             <input type="text" name="emailTemplateId" value={settingsForm.emailTemplateId} onChange={handleSettingsChange} className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="e.g. template_abc" />
+                             <input type="text" name="emailTemplateId" value={settingsForm.emailTemplateId || ''} onChange={handleSettingsChange} className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="e.g. template_abc" />
                         </div>
                         <div>
                              <label className="block text-xs font-bold text-blue-800 mb-1">Public Key</label>
-                             <input type="text" name="emailPublicKey" value={settingsForm.emailPublicKey} onChange={handleSettingsChange} className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="e.g. user_12345" />
+                             <input type="text" name="emailPublicKey" value={settingsForm.emailPublicKey || ''} onChange={handleSettingsChange} className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="e.g. user_12345" />
                         </div>
                     </div>
                  </div>
@@ -728,6 +941,49 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                             </div>
                         </div>
                     </div>
+
+                     {/* Logo Upload Section */}
+                     <div className="lg:col-span-2 bg-purple-50 p-6 rounded-xl border border-purple-200 mt-4">
+                        <div className="flex justify-between items-center mb-4 border-b border-purple-200 pb-2">
+                            <h3 className="font-bold text-purple-900 flex items-center gap-2">
+                                <Image size={18} /> University Logo
+                            </h3>
+                            {settingsForm.universityLogo && (
+                                <button onClick={handleRemoveLogo} className="text-xs text-red-600 hover:text-red-800 font-medium">
+                                    Remove Logo
+                                </button>
+                            )}
+                        </div>
+                        
+                        <div className="flex flex-col md:flex-row gap-6 items-center">
+                            <div className="flex-1 w-full">
+                                <label className="block text-sm font-medium text-purple-800 mb-2">Upload Logo Image</label>
+                                <div className="border-2 border-dashed border-purple-300 rounded-lg p-4 bg-white hover:bg-purple-50 transition-colors text-center">
+                                    <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" id="logo-upload" />
+                                    <label htmlFor="logo-upload" className="cursor-pointer block w-full">
+                                        <div className="flex flex-col items-center gap-2 text-purple-600">
+                                            <Upload size={24} />
+                                            <span className="text-sm font-medium">Click to select file</span>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+                            <div className="w-full md:w-64">
+                                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 text-center">Preview</label>
+                                <div className="bg-white border border-gray-300 rounded-lg h-32 flex items-center justify-center overflow-hidden relative">
+                                    {settingsForm.universityLogo ? (
+                                        <img 
+                                            src={settingsForm.universityLogo} 
+                                            alt="Logo Preview" 
+                                            className="max-h-24 max-w-[90%] object-contain"
+                                        />
+                                    ) : (
+                                        <span className="text-gray-400 text-sm">No logo</span>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                  </div>
                  <div className="mt-6 flex justify-end">
                     <button 
@@ -740,7 +996,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
              </>
         )}
 
-        {/* SESSION TAB */}
+        {/* SESSION TAB (Unchanged) */}
         {activeTab === 'SESSION' && (
              <>
                 <h2 className="text-xl font-bold text-gray-800 mb-2">Exam Session Management</h2>
@@ -777,7 +1033,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                              <div className="w-full bg-gray-200 rounded-full h-2.5">
                                 <div className="bg-green-600 h-2.5 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }}></div>
                              </div>
-                             <p className="text-xs text-gray-500 mt-1 text-center">{uploadProgress}% Complete</p>
+                             <div className="flex justify-between items-center mt-3 bg-green-50 p-2 rounded border border-green-200">
+                                    <span className="text-xs text-gray-500 font-bold uppercase">Live Progress</span>
+                                    <span className="text-base font-bold text-green-700 font-mono">
+                                        {uploadStats.processed} <span className="text-gray-400 text-xs">/</span> {uploadStats.total}
+                                    </span>
+                                </div>
                         </div>
                     )}
                      {error && (
@@ -821,49 +1082,103 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                     )}
                  </div>
 
-                {/* Session UI Grids (No changes needed) */}
+                {/* Session UI Grids */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                      <div className="bg-white rounded-xl border border-blue-200 shadow-sm overflow-hidden">
                         <div className="bg-blue-50 px-6 py-4 border-b border-blue-100">
                             <h3 className="font-bold text-blue-800">Current Session</h3>
                         </div>
                         <div className="p-6">
-                             <div className="flex flex-wrap gap-3 mb-6">
-                                {SUBJECT_CONFIG.map(config => {
-                                    const isSelected = currentSessionYears.includes(config.year);
-                                    return (
-                                        <button
-                                            key={config.year}
-                                            type="button"
-                                            onClick={() => handleToggleSessionYear(config.year)}
+                             {/* Tabs for Multiple Exams */}
+                             <div className="mb-6">
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Active Exams List</label>
+                                <div className="flex flex-wrap gap-2">
+                                    {examList.map(name => (
+                                        <div 
+                                            key={name}
+                                            onClick={() => onSelectExam && onSelectExam(name)}
                                             className={`
-                                                flex items-center gap-2 px-3 py-2 rounded-md border text-sm font-medium transition-all
-                                                ${isSelected 
-                                                    ? 'bg-blue-600 text-white border-blue-600 shadow-sm' 
-                                                    : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                                                relative group cursor-pointer px-4 py-2 rounded-lg text-sm font-bold border transition-all select-none
+                                                ${currentExamName === name 
+                                                    ? 'bg-blue-600 text-white border-blue-600 shadow-md' 
+                                                    : 'bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-200'
                                                 }
                                             `}
                                         >
-                                            {isSelected ? <CheckSquare size={16} /> : <Square size={16} />}
-                                            {config.year}
-                                        </button>
-                                    );
-                                })}
-                            </div>
+                                            {name}
+                                            {/* Delete Button (Only if more than 1 exists) */}
+                                            {examList.length > 1 && (
+                                                <button 
+                                                    onClick={(e) => handleDeleteExamTab(e, name)}
+                                                    className={`
+                                                        absolute -top-2 -right-2 p-0.5 rounded-full shadow-sm opacity-0 group-hover:opacity-100 transition-opacity
+                                                        ${currentExamName === name ? 'bg-white text-red-600' : 'bg-red-500 text-white'}
+                                                    `}
+                                                    title="Remove Tab"
+                                                >
+                                                    <X size={12} />
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))}
+                                    <button 
+                                        onClick={handleAddExamTab}
+                                        className="px-3 py-2 rounded-lg border-2 border-dashed border-blue-300 text-blue-600 hover:border-blue-500 hover:text-blue-700 transition-colors flex items-center justify-center"
+                                        title="Add New Exam Phase"
+                                    >
+                                        <Plus size={16} />
+                                    </button>
+                                </div>
+                                <p className="text-[10px] text-gray-400 mt-2">
+                                    Click a tab to set as "Active". Add new tabs for different phases (e.g. Phase-I, Phase-II).
+                                </p>
+                             </div>
 
-                             <input 
-                                type="text" 
-                                value={nextExamName}
-                                onChange={(e) => setNextExamName(e.target.value)}
-                                className="w-full px-3 py-2 border rounded-lg mb-4 focus:ring-2 focus:ring-blue-500 outline-none"
-                                placeholder="e.g. WINTER-2025"
-                            />
-                            <button 
-                                onClick={handleStartNewSession}
-                                className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors"
-                            >
-                                <RefreshCw size={18} /> Archive & Start Fresh
-                            </button>
+                             <div className="border-t border-gray-200 pt-4 mt-4">
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Active Years for {currentExamName}</label>
+                                <div className="flex flex-wrap gap-3 mb-6">
+                                    {SUBJECT_CONFIG.map(config => {
+                                        const isSelected = currentSessionYears.includes(config.year);
+                                        return (
+                                            <button
+                                                key={config.year}
+                                                type="button"
+                                                onClick={() => handleToggleSessionYear(config.year)}
+                                                className={`
+                                                    flex items-center gap-2 px-3 py-2 rounded-md border text-sm font-medium transition-all
+                                                    ${isSelected 
+                                                        ? 'bg-blue-600 text-white border-blue-600 shadow-sm' 
+                                                        : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                                                    }
+                                                `}
+                                            >
+                                                {isSelected ? <CheckSquare size={16} /> : <Square size={16} />}
+                                                {config.year}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                             </div>
+
+                             <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                                <label className="block text-xs font-bold text-gray-700 mb-2">Archive Current Session</label>
+                                <input 
+                                    type="text" 
+                                    value={nextExamName}
+                                    onChange={(e) => setNextExamName(e.target.value)}
+                                    className="w-full px-3 py-2 border rounded-lg mb-4 focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                                    placeholder="Enter Name for NEXT Session (e.g. WINTER-2025)"
+                                />
+                                <button 
+                                    onClick={handleStartNewSession}
+                                    className="w-full bg-gray-800 hover:bg-gray-900 text-white px-4 py-2 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors"
+                                >
+                                    <RefreshCw size={18} /> Archive "{currentExamName}" & Reset
+                                </button>
+                                <p className="text-[10px] text-gray-500 mt-2 text-center">
+                                    Warning: This will move all current students to Archive.
+                                </p>
+                            </div>
                         </div>
                      </div>
                      
@@ -909,27 +1224,41 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
              </>
         )}
 
-        {/* ACCESS TAB logic (no changes) */}
         {activeTab === 'ACCESS' && isAdminUser && (
              <>
-                <h2 className="text-xl font-bold text-gray-800 mb-2">User Access Control</h2>
+                <h2 className="text-xl font-bold text-gray-800 mb-2">User Access & Password Control</h2>
                 {successMsg && <div className="mb-4 flex items-start gap-2 text-green-600 text-sm bg-green-50 p-3 rounded-lg"><CheckCircle size={16} className="mt-0.5 shrink-0" />{successMsg}</div>}
                  
                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {FACULTIES.map(faculty => (
-                        <div key={faculty.id} className={`p-4 rounded-lg border ${allowedFaculties.includes(faculty.id) ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'}`}>
-                            <label className="flex items-center space-x-3 cursor-pointer">
+                        <div key={faculty.id} className={`p-4 rounded-lg border flex flex-col justify-between ${allowedFaculties.includes(faculty.id) ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'}`}>
+                            <div className="flex items-center justify-between mb-3">
+                                <label className="flex items-center space-x-3 cursor-pointer">
+                                    <input 
+                                        type="checkbox" 
+                                        className="form-checkbox h-5 w-5 text-blue-600 rounded"
+                                        checked={allowedFaculties.includes(faculty.id)}
+                                        onChange={() => handleTogglePermission(faculty.id)}
+                                        disabled={faculty.id === 'medical'}
+                                    />
+                                    <span className={`font-bold ${allowedFaculties.includes(faculty.id) ? 'text-blue-800' : 'text-gray-600'}`}>
+                                        {faculty.label}
+                                    </span>
+                                </label>
+                            </div>
+                            
+                            <div className="mt-2">
+                                <label className="text-[10px] uppercase font-bold text-gray-500 mb-1 flex items-center gap-1">
+                                    <Key size={10} /> Set Password
+                                </label>
                                 <input 
-                                    type="checkbox" 
-                                    className="form-checkbox h-5 w-5 text-blue-600 rounded"
-                                    checked={allowedFaculties.includes(faculty.id)}
-                                    onChange={() => handleTogglePermission(faculty.id)}
-                                    disabled={faculty.id === 'medical'}
+                                    type="text" 
+                                    value={passwords[faculty.id] || ''}
+                                    onChange={(e) => handlePasswordChange(faculty.id, e.target.value)}
+                                    placeholder="Default: 1234"
+                                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 outline-none bg-white text-gray-800 font-mono"
                                 />
-                                <span className={`font-medium ${allowedFaculties.includes(faculty.id) ? 'text-blue-800' : 'text-gray-600'}`}>
-                                    {faculty.label}
-                                </span>
-                            </label>
+                            </div>
                         </div>
                     ))}
                 </div>
@@ -939,7 +1268,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                         onClick={handleSavePermissions}
                         className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium flex items-center gap-2 shadow-lg transition-colors"
                     >
-                        <Lock size={18} /> Save Permissions
+                        <Lock size={18} /> Save All Changes
                     </button>
                 </div>
              </>

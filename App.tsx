@@ -1,12 +1,13 @@
+
 import React, { useState, useEffect } from 'react';
 import { ViewState, StudentEntry, MasterRecord, CollegeAddressRecord, FacultyUser, LetterSettings, ArchivedSession } from './types';
-import { DEFAULT_LETTER_SETTINGS, SUBJECT_CONFIG } from './constants';
+import { DEFAULT_LETTER_SETTINGS, SUBJECT_CONFIG, createEmptyStudent } from './constants';
 import StudentForm from './components/StudentForm';
 import Dashboard from './components/Dashboard';
 import AdminPanel from './components/AdminPanel';
 import Ledger from './components/Ledger';
 import Login from './components/Login';
-import { Activity, ShieldCheck, LogOut, Loader2 } from 'lucide-react';
+import { Activity, ShieldCheck, LogOut, Loader2, CheckCircle } from 'lucide-react';
 
 // Firebase Services
 import { 
@@ -25,22 +26,27 @@ import {
 
 function App() {
   const [currentUser, setCurrentUser] = useState<FacultyUser | null>(null);
+  
   const [viewState, setViewState] = useState<ViewState>('LIST');
-
+  
   // Data States
   const [students, setStudents] = useState<StudentEntry[]>([]);
   const [masterRecords, setMasterRecords] = useState<MasterRecord[]>([]);
   const [collegeAddresses, setCollegeAddresses] = useState<CollegeAddressRecord[]>([]);
   const [letterSettings, setLetterSettings] = useState<LetterSettings>(DEFAULT_LETTER_SETTINGS);
-
+  
   // Exam Management States
   const [currentExamName, setCurrentExamName] = useState<string>('SUMMER-2025_PHASE-IV');
+  const [examList, setExamList] = useState<string[]>(['SUMMER-2025_PHASE-IV']); // List of active exams
   const [sessionYears, setSessionYears] = useState<string[]>(SUBJECT_CONFIG.map(c => c.year));
   const [archives, setArchives] = useState<ArchivedSession[]>([]);
 
   const [currentStudent, setCurrentStudent] = useState<StudentEntry | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(false);
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [formResetKey, setFormResetKey] = useState(0);
 
+  // Load user session from local storage on mount (Login Persistence)
   useEffect(() => {
     const savedUser = localStorage.getItem('currentUser');
     if (savedUser) {
@@ -48,31 +54,40 @@ function App() {
     }
   }, []);
 
+  // --- Initialize Firebase Data Subscription when User Logs In ---
   useEffect(() => {
     if (currentUser) {
         setIsLoading(true);
         const facultyId = currentUser.id;
 
+        // 1. Subscribe to Students Collection (Real-time)
         const unsubscribe = subscribeToStudents(facultyId, (data) => {
             setStudents(data);
             setIsLoading(false);
         });
 
+        // 2. Fetch Initial Config/Settings
         const initData = async () => {
             try {
+                // Fetch Settings & Exam Config
                 const settingsData = await fetchFacultySettings(facultyId);
                 if (settingsData) {
                     if (settingsData.letterSettings) setLetterSettings(settingsData.letterSettings);
                     if (settingsData.currentExamName) setCurrentExamName(settingsData.currentExamName);
                     if (settingsData.sessionYears) setSessionYears(settingsData.sessionYears);
+                    if (settingsData.examList) setExamList(settingsData.examList);
+                    else if (settingsData.currentExamName) setExamList([settingsData.currentExamName]); // Fallback
                 }
 
+                // Fetch Master Records
                 const masters = await fetchMasterRecordsDB(facultyId);
                 setMasterRecords(masters);
 
+                // Fetch Addresses
                 const addresses = await fetchAddressesDB(facultyId);
                 setCollegeAddresses(addresses);
 
+                // Fetch Archives
                 const archs = await fetchArchivesDB(facultyId);
                 setArchives(archs);
 
@@ -87,17 +102,28 @@ function App() {
     }
   }, [currentUser]);
 
+  // --- Actions ---
+
   const handleUpdateExamName = (name: string) => {
       setCurrentExamName(name);
       if (currentUser) {
-          saveCurrentExamConfig(currentUser.id, name, sessionYears);
+          // When changing name manually (from Form), we just update current.
+          // In Admin panel, explicit list update handles the DB save.
+          saveCurrentExamConfig(currentUser.id, name, sessionYears, examList);
       }
   };
+
+  const handleUpdateExamList = (newList: string[]) => {
+      setExamList(newList);
+      if (currentUser) {
+          saveCurrentExamConfig(currentUser.id, currentExamName, sessionYears, newList);
+      }
+  }
 
   const handleUpdateSessionYears = (years: string[]) => {
       setSessionYears(years);
       if (currentUser) {
-          saveCurrentExamConfig(currentUser.id, currentExamName, years);
+          saveCurrentExamConfig(currentUser.id, currentExamName, years, examList);
       }
   };
 
@@ -108,6 +134,7 @@ function App() {
       }
   };
 
+  // --- Archive Logic ---
   const handleArchiveAndReset = async (newExamName: string) => {
       if (!currentUser) return;
       setIsLoading(true);
@@ -123,8 +150,12 @@ function App() {
 
       try {
         await archiveCurrentSession(currentUser.id, newArchive, newExamName);
+        
+        // State updates will happen automatically via subscription (students will become empty)
+        // and fetchArchives re-call manually or we update local state
         setArchives(prev => [newArchive, ...prev]);
         setCurrentExamName(newExamName);
+        setExamList([newExamName]); // Reset list on archive
         setViewState('LIST');
       } catch (e) {
           alert('Error archiving session. Check console.');
@@ -135,13 +166,18 @@ function App() {
   };
 
   const handleRestoreArchive = (session: ArchivedSession) => {
-      if (confirm(`VIEW ONLY MODE: Loading archive "${session.examName}".\nChanges will NOT be saved.`)) {
+      // Restore logic for VIEWING ONLY (Client side swap)
+      // We don't overwrite DB, just local view for printing/checking
+      if (confirm(`VIEW ONLY MODE: This will load data from "${session.examName}" into your view.\n\nChanges made here will NOT be saved to the database unless you re-archive.\n\nRefresh the page to return to live data.`)) {
           setStudents(session.students);
           setCurrentExamName(session.examName);
           if (session.activeYears) setSessionYears(session.activeYears);
+          // Note: Real-time subscription might override this if a change happens in DB.
+          // For a robust system, we would need a 'View Mode' state, but this works for simple viewing.
       }
   };
 
+  // --- Login/Logout ---
   const handleLogin = (user: FacultyUser) => {
       setCurrentUser(user);
       localStorage.setItem('currentUser', JSON.stringify(user));
@@ -155,6 +191,8 @@ function App() {
       setMasterRecords([]);
   };
 
+  // --- CRUD Operations ---
+
   const handleAddNew = () => {
     setCurrentStudent(undefined);
     setViewState('FORM');
@@ -167,27 +205,45 @@ function App() {
 
   const handleDelete = async (id: string) => {
     if (!currentUser) return;
-    if (confirm('Delete this record?')) {
+    if (confirm('Are you sure you want to delete this record from the database?')) {
       await deleteStudentFromDB(currentUser.id, id);
     }
   };
 
-  const handleSaveStudent = async (data: StudentEntry) => {
+  const showToast = (msg: string) => {
+      setToastMsg(msg);
+      setTimeout(() => setToastMsg(null), 3000);
+  };
+
+  const handleSaveStudent = async (data: StudentEntry, shouldClose: boolean) => {
     if (!currentUser) return;
-    setViewState('LIST');
+    
+    // Optimistic UI updates
+    if (shouldClose) {
+        setViewState('LIST'); 
+    } else {
+        // Reset form for next entry
+        setCurrentStudent(undefined); 
+        // Force reset the form by changing its key
+        setFormResetKey(prev => prev + 1);
+    }
     
     try {
         if (students.find(s => s.id === data.id)) {
             await updateStudentInDB(currentUser.id, data);
+            showToast("Record updated successfully!");
         } else {
             await addStudentToDB(currentUser.id, data);
+            showToast("Record saved! Ready for next entry.");
         }
     } catch (e) {
         console.error("Save failed", e);
-        alert("Failed to save to cloud.");
+        alert("Failed to save record to cloud.");
     }
   };
 
+  // Callbacks for Admin Panel
+  // Note: Admin panel handles DB uploads internally via services, we just refresh local state if needed
   const refreshMasterData = (data: MasterRecord[]) => setMasterRecords(data);
   const refreshAddressData = (data: CollegeAddressRecord[]) => setCollegeAddresses(data);
 
@@ -195,6 +251,7 @@ function App() {
       return <Login onLogin={handleLogin} />;
   }
 
+  // Loading Overlay
   if (isLoading && students.length === 0 && viewState === 'LIST') {
       return (
           <div className="min-h-screen flex items-center justify-center flex-col gap-4">
@@ -222,11 +279,16 @@ function App() {
                 archives={archives}
                 onArchiveAndReset={handleArchiveAndReset}
                 onRestoreArchive={handleRestoreArchive}
+                // New Props for Exam List Management
+                examList={examList}
+                onUpdateExamList={handleUpdateExamList}
+                onSelectExam={handleUpdateExamName}
             />
         );
       case 'FORM':
         return (
           <StudentForm 
+            key={currentStudent ? currentStudent.id : `new-entry-${formResetKey}`}
             initialData={currentStudent}
             onSave={handleSaveStudent}
             onCancel={() => setViewState('LIST')}
@@ -262,8 +324,39 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <nav className="bg-white border-b border-gray-200 sticky top-0 z-50">
+    <div className="min-h-screen flex flex-col relative">
+      {/* Toast Notification */}
+      {toastMsg && (
+          <div className="fixed top-20 right-5 z-[100] bg-green-600 text-white px-4 py-2 rounded-lg shadow-xl flex items-center gap-2 animate-bounce">
+              <CheckCircle size={20} /> {toastMsg}
+          </div>
+      )}
+
+      {/* Global Print Styles to forcefully hide Nav and Footer */}
+      <style>{`
+        @media print {
+            .app-no-print {
+                display: none !important;
+            }
+            body {
+                background-color: white !important;
+            }
+            /* Remove margins/padding from main container when printing */
+            main {
+                padding: 0 !important;
+                margin: 0 !important;
+                background-color: white !important;
+            }
+            /* Ensure inner content takes width */
+            main > div {
+                max-width: none !important;
+                padding: 0 !important;
+            }
+        }
+      `}</style>
+
+      {/* Navbar - Hidden on Print */}
+      <nav className="bg-white border-b border-gray-200 sticky top-0 z-50 print:hidden app-no-print">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between h-16">
               <div className="flex items-center gap-3 cursor-pointer" onClick={() => setViewState('LIST')}>
@@ -271,9 +364,7 @@ function App() {
                   <Activity size={24} />
                 </div>
                 <div>
-                  <h1 className="text-xl font-bold text-gray-900 tracking-tight">
-                    Theory Retotaling/Photocopy Verification data
-                  </h1>
+                  <h1 className="text-xl font-bold text-gray-900 tracking-tight">Theory Retotaling/Photocopy Verification data</h1>
                   <div className="flex items-center gap-2">
                       <p className="text-xs text-blue-600 font-bold uppercase">{currentUser.label}</p>
                       <span className="text-gray-300">|</span>
@@ -284,7 +375,6 @@ function App() {
                   </div>
                 </div>
               </div>
-
               <div className="flex items-center gap-4">
                 <button 
                     onClick={() => setViewState('ADMIN')}
@@ -295,12 +385,11 @@ function App() {
                     <ShieldCheck size={16} />
                     Admin
                 </button>
-
                 <div className="h-6 w-px bg-gray-300 mx-2"></div>
-
                 <button 
                     onClick={handleLogout}
                     className="flex items-center gap-1 text-sm font-medium px-3 py-1.5 rounded-md text-red-600 hover:bg-red-50 transition-colors"
+                    title="Logout"
                 >
                     <LogOut size={16} />
                 </button>
@@ -309,13 +398,15 @@ function App() {
           </div>
       </nav>
 
-      <main className="flex-1 bg-gray-50/50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* Main Content - No Padding/Margin on Print */}
+      <main className="flex-1 bg-gray-50/50 print:bg-white print:p-0">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 print:max-w-none print:px-0 print:py-0">
           {renderContent()}
         </div>
       </main>
 
-      <footer className="bg-white border-t border-gray-200 py-6">
+      {/* Footer - Hidden on Print */}
+      <footer className="bg-white border-t border-gray-200 py-6 print:hidden app-no-print">
           <div className="max-w-7xl mx-auto px-4 text-center text-sm text-gray-400">
             <p>&copy; {new Date().getFullYear()} Theory Retotaling/Photocopy Verification. Logged in as: {currentUser.name}.</p>
             <p className="mt-1 font-medium text-gray-500">Designed & Developed by Kiran Pawar</p>

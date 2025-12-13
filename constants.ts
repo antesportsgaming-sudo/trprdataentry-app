@@ -1,3 +1,4 @@
+
 import { YearSelection, SubjectSelection, FacultyUser, LetterSettings } from './types';
 
 export const FACULTIES: FacultyUser[] = [
@@ -21,6 +22,7 @@ export const DEFAULT_LETTER_SETTINGS: LetterSettings = {
   officerDesigEn: 'Section Officer',
   officerDeptEn: 'Medical Faculty(UG)',
   signatureImage: '',
+  universityLogo: '',
   emailServiceId: '',
   emailTemplateId: '',
   emailPublicKey: ''

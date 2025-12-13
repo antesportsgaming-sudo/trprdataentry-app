@@ -1,5 +1,4 @@
 
-
 import { db } from '../firebase';
 import { 
     collection, 
@@ -16,12 +15,13 @@ import {
     onSnapshot
 } from 'firebase/firestore';
 import { StudentEntry, MasterRecord, CollegeAddressRecord, LetterSettings, ArchivedSession } from '../types';
+import { SUBJECT_CONFIG } from '../constants';
 
 // Collection References
 const FACULTY_COLLECTION = 'faculties';
 
 // Helper to check if error is just connection issue
-const isOfflineError = (error: any) => {
+export const isOfflineError = (error: any) => {
     const msg = error?.message || '';
     const code = error?.code || '';
     return msg.includes('offline') || code.includes('unavailable');
@@ -76,16 +76,56 @@ export const saveFacultySettings = async (facultyId: string, settings: Partial<L
     }
 };
 
-export const saveCurrentExamConfig = async (facultyId: string, examName: string, sessionYears: string[]) => {
+export const saveCurrentExamConfig = async (facultyId: string, examName: string, sessionYears: string[], examList?: string[]) => {
     try {
         const docRef = doc(db, FACULTY_COLLECTION, facultyId);
-        await setDoc(docRef, { currentExamName: examName, sessionYears }, { merge: true });
+        const data: any = { currentExamName: examName, sessionYears };
+        if (examList) {
+            data.examList = examList;
+        }
+        await setDoc(docRef, data, { merge: true });
     } catch (error) {
         console.error("Error saving exam config:", error);
     }
 };
 
+// --- Access & Password Control ---
+
+export const fetchAccessConfig = async () => {
+    try {
+        const docRef = doc(db, 'config', 'global_access');
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+            return {
+                allowedIds: data.allowedIds || ['medical'],
+                passwords: data.passwords || {}
+            };
+        }
+        return { allowedIds: ['medical'], passwords: {} };
+    } catch (error) {
+        // Silently default to medical if offline
+        if (!isOfflineError(error)) {
+            console.warn("Error fetching access config:", error);
+        }
+        return { allowedIds: ['medical'], passwords: {} };
+    }
+};
+
+export const saveAccessConfig = async (allowedIds: string[], passwords: Record<string, string>) => {
+    try {
+        const docRef = doc(db, 'config', 'global_access');
+        await setDoc(docRef, { allowedIds, passwords }, { merge: true });
+    } catch (error) {
+        console.error("Error saving access config:", error);
+        throw error;
+    }
+};
+
+// Deprecated: kept for backward compatibility if imported elsewhere, but directs to new config
 export const saveAllowedFaculties = async (allowedIds: string[]) => {
+    // This assumes no password change, just permission change. 
+    // Ideally use saveAccessConfig instead.
     try {
         const docRef = doc(db, 'config', 'global_access');
         await setDoc(docRef, { allowedIds }, { merge: true });
@@ -96,17 +136,8 @@ export const saveAllowedFaculties = async (allowedIds: string[]) => {
 };
 
 export const fetchAllowedFaculties = async (): Promise<string[]> => {
-    try {
-        const docRef = doc(db, 'config', 'global_access');
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-            return docSnap.data().allowedIds || ['medical'];
-        }
-        return ['medical'];
-    } catch (error) {
-        // Silently default to medical if offline
-        return ['medical'];
-    }
+    const config = await fetchAccessConfig();
+    return config.allowedIds;
 };
 
 // --- Student Operations ---
@@ -170,11 +201,13 @@ export const uploadMasterRecordsBatch = async (
     onProgress?: (processed: number, total: number) => void
 ) => {
     const collectionRef = collection(db, FACULTY_COLLECTION, facultyId, 'master_records');
-    // Using Max Batch Size (500)
-    const BATCH_SIZE = 500;
+    
+    // REDUCED BATCH SIZE FOR BETTER UI FEEDBACK (Live Counting)
+    // Firestore limit is 500, but 25 gives more frequent updates to the UI
+    const BATCH_SIZE = 25; 
     const chunks = chunkArray(records, BATCH_SIZE);
     
-    console.log(`Starting SUPER-FAST upload of ${records.length} records in ${chunks.length} chunks...`);
+    console.log(`Starting upload of ${records.length} records in ${chunks.length} chunks...`);
 
     let processedCount = 0;
 
@@ -199,7 +232,6 @@ export const uploadMasterRecordsBatch = async (
                 await batch.commit();
             } catch (e) {
                 console.error("Batch commit failed:", e);
-                // Retrying once might be useful in poor networks, but keep it simple for speed
                 throw e;
             }
         }
@@ -210,8 +242,8 @@ export const uploadMasterRecordsBatch = async (
         }
     };
 
-    // PERFORMANCE UPGRADE: High Concurrency (25 Parallel Batches)
-    const CONCURRENCY_LIMIT = 25;
+    // Concurrency Limit (Keep it moderate so UI updates don't lag)
+    const CONCURRENCY_LIMIT = 10;
     await processInPool(chunks, CONCURRENCY_LIMIT, processChunk);
 };
 
@@ -226,13 +258,24 @@ export const fetchMasterRecordsDB = async (facultyId: string): Promise<MasterRec
     }
 };
 
+export const fetchAddressesDB = async (facultyId: string): Promise<CollegeAddressRecord[]> => {
+    try {
+        const collectionRef = collection(db, FACULTY_COLLECTION, facultyId, 'college_addresses');
+        const snapshot = await getDocs(collectionRef);
+        return snapshot.docs.map(doc => doc.data() as CollegeAddressRecord);
+    } catch (error) {
+        if (!isOfflineError(error)) console.warn("Error fetching addresses:", error);
+        return [];
+    }
+};
+
 export const uploadAddressesBatch = async (
     facultyId: string, 
     records: CollegeAddressRecord[],
     onProgress?: (processed: number, total: number) => void
 ) => {
     const collectionRef = collection(db, FACULTY_COLLECTION, facultyId, 'college_addresses');
-    const BATCH_SIZE = 500;
+    const BATCH_SIZE = 25; // Smaller batch for better progress bar
     const chunks = chunkArray(records, BATCH_SIZE);
     
     let processedCount = 0;
@@ -246,7 +289,8 @@ export const uploadAddressesBatch = async (
             const safeId = sanitizeDocId(rawCode);
             if (safeId && safeId.length > 0) {
                 const docRef = doc(collectionRef, safeId);
-                batch.set(docRef, record);
+                // USE MERGE: TRUE to preserve existing data if only updating partial fields
+                batch.set(docRef, record, { merge: true });
                 batchHasOps = true;
             }
         });
@@ -259,108 +303,84 @@ export const uploadAddressesBatch = async (
             onProgress(Math.min(processedCount, records.length), records.length);
         }
     };
-
-    // High Concurrency
-    await processInPool(chunks, 25, processChunk);
-};
-
-export const fetchAddressesDB = async (facultyId: string): Promise<CollegeAddressRecord[]> => {
-    try {
-        const collectionRef = collection(db, FACULTY_COLLECTION, facultyId, 'college_addresses');
-        const snapshot = await getDocs(collectionRef);
-        return snapshot.docs.map(doc => doc.data() as CollegeAddressRecord);
-    } catch (error) {
-        if (!isOfflineError(error)) console.warn("Error fetching addresses:", error);
-        return [];
-    }
-};
-
-// --- JSON Restore / Backup ---
-
-export const fetchAllStudentsForBackup = async (facultyId: string): Promise<StudentEntry[]> => {
-     try {
-        const studentsRef = collection(db, FACULTY_COLLECTION, facultyId, 'students');
-        const snapshot = await getDocs(studentsRef);
-        return snapshot.docs.map(doc => doc.data() as StudentEntry);
-     } catch (error) {
-         console.error("Backup Fetch Error", error);
-         throw error;
-     }
-}
-
-export const restoreBackupBatch = async (
-    facultyId: string, 
-    students: StudentEntry[],
-    onProgress?: (processed: number, total: number) => void
-) => {
-    const collectionRef = collection(db, FACULTY_COLLECTION, facultyId, 'students');
-    const BATCH_SIZE = 500; 
-    const chunks = chunkArray(students, BATCH_SIZE);
     
-    let processedCount = 0;
-
-    const processChunk = async (chunk: StudentEntry[]) => {
-        const batch = writeBatch(db);
-        chunk.forEach(record => {
-            // Ensure ID exists
-            if (!record.id) record.id = crypto.randomUUID();
-            const docRef = doc(collectionRef, record.id);
-            batch.set(docRef, record);
-        });
-        await batch.commit();
-        processedCount += chunk.length;
-        if (onProgress) onProgress(processedCount, students.length);
-    };
-
-    // Very High Concurrency for Restore (25)
-    await processInPool(chunks, 25, processChunk);
+    const CONCURRENCY_LIMIT = 10;
+    await processInPool(chunks, CONCURRENCY_LIMIT, processChunk);
 };
 
-// --- Archives ---
-
-export const archiveCurrentSession = async (facultyId: string, archiveData: ArchivedSession, nextExamName: string) => {
-    const batch = writeBatch(db);
-    
-    // 1. Save Archive
-    const archiveRef = doc(db, FACULTY_COLLECTION, facultyId, 'archives', archiveData.id);
-    batch.set(archiveRef, archiveData);
-
-    // 2. Update Current Exam Name
-    const facultyRef = doc(db, FACULTY_COLLECTION, facultyId);
-    batch.update(facultyRef, { currentExamName: nextExamName });
-
-    await batch.commit();
-
-    // 3. Delete current students
-    try {
-        const studentsRef = collection(db, FACULTY_COLLECTION, facultyId, 'students');
-        const snapshot = await getDocs(studentsRef);
-        
-        // Fast Deletion
-        const BATCH_SIZE = 500;
-        const chunks = chunkArray(snapshot.docs, BATCH_SIZE);
-        
-        const processDeleteChunk = async (chunk: any[]) => {
-             const delBatch = writeBatch(db);
-             chunk.forEach((d) => delBatch.delete(d.ref));
-             await delBatch.commit();
-        };
-
-        await processInPool(chunks, 25, processDeleteChunk);
-
-    } catch (error) {
-        console.error("Error clearing students for archive:", error);
-        // Continue flow, data is at least archived.
-    }
-};
+// --- Archive Operations ---
 
 export const fetchArchivesDB = async (facultyId: string): Promise<ArchivedSession[]> => {
     try {
-        const collectionRef = collection(db, FACULTY_COLLECTION, facultyId, 'archives');
-        const snapshot = await getDocs(collectionRef);
+        const archivesRef = collection(db, FACULTY_COLLECTION, facultyId, 'archives');
+        const snapshot = await getDocs(archivesRef);
         return snapshot.docs.map(doc => doc.data() as ArchivedSession);
     } catch (error) {
         if (!isOfflineError(error)) console.warn("Error fetching archives:", error);
         return [];
     }
+};
+
+export const archiveCurrentSession = async (facultyId: string, archiveData: ArchivedSession, newExamName: string) => {
+    // 1. Save to Archives Collection
+    const archiveRef = doc(db, FACULTY_COLLECTION, facultyId, 'archives', archiveData.id);
+    await setDoc(archiveRef, archiveData);
+
+    // 2. Delete all current students (Batch delete)
+    const studentsRef = collection(db, FACULTY_COLLECTION, facultyId, 'students');
+    const snapshot = await getDocs(studentsRef);
+    
+    const chunks = chunkArray(snapshot.docs, 500); // Delete can be max 500
+    for (const chunk of chunks) {
+        const batch = writeBatch(db);
+        chunk.forEach(docSnap => {
+            batch.delete((docSnap as any).ref);
+        });
+        await batch.commit();
+    }
+
+    // 3. Update Current Exam Config
+    // When archiving, we reset the exam list to just the new one
+    const defaultYears = SUBJECT_CONFIG.map(c => c.year);
+    const newExamList = [newExamName];
+    await saveCurrentExamConfig(facultyId, newExamName, defaultYears, newExamList);
+};
+
+// --- Backup & Restore Operations ---
+
+export const fetchAllStudentsForBackup = async (facultyId: string) => {
+    const studentsRef = collection(db, FACULTY_COLLECTION, facultyId, 'students');
+    const snapshot = await getDocs(studentsRef);
+    return snapshot.docs.map(doc => doc.data());
+};
+
+export const restoreBackupBatch = async (
+    facultyId: string, 
+    students: any[], 
+    onProgress?: (processed: number, total: number) => void
+) => {
+    const collectionRef = collection(db, FACULTY_COLLECTION, facultyId, 'students');
+    const BATCH_SIZE = 25; // Smaller batch
+    const chunks = chunkArray(students, BATCH_SIZE);
+    
+    let processedCount = 0;
+
+    const processChunk = async (chunk: any[]) => {
+        const batch = writeBatch(db);
+        chunk.forEach(student => {
+             // Ensure ID exists
+             const id = student.id || crypto.randomUUID();
+             const docRef = doc(collectionRef, id);
+             batch.set(docRef, { ...student, id });
+        });
+        await batch.commit();
+        
+        processedCount += chunk.length;
+        if (onProgress) {
+            onProgress(Math.min(processedCount, students.length), students.length);
+        }
+    };
+
+    const CONCURRENCY_LIMIT = 10;
+    await processInPool(chunks, CONCURRENCY_LIMIT, processChunk);
 };

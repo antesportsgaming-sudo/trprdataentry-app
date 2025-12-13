@@ -86,8 +86,7 @@ const Ledger: React.FC<LedgerProps> = ({ students, onBack, collegeAddresses = []
     return currentStudents.filter(s => s.pendingFees > 0);
   }, [currentStudents]);
   
-  // Credit Note usually includes ALL students who have paid something, regardless of pending status
-  // or strictly those with payment details.
+  // Credit Note usually includes ALL students who have paid something
   const paidAnythingStudents = useMemo(() => {
       return currentStudents.filter(s => s.studentPayFees > 0);
   }, [currentStudents]);
@@ -143,7 +142,6 @@ const Ledger: React.FC<LedgerProps> = ({ students, onBack, collegeAddresses = []
                 }
                 
                 const suffix = parts.length > 0 ? `-${parts.join('-')}` : '';
-                // Use full subject name instead of Title Case
                 subjectStrings.push(`${s.subjectName}${suffix}`);
             });
             
@@ -167,7 +165,7 @@ const Ledger: React.FC<LedgerProps> = ({ students, onBack, collegeAddresses = []
 
   // --- Helper to Render Result Sheet Table (Used in Cover Letter) ---
   const renderResultTable = (studentsForTable: StudentEntry[], colName: string, colCode: string) => (
-    <div className="w-full text-black font-serif">
+    <div className="w-full text-black font-serif max-w-[210mm] mx-auto p-[15mm] bg-white min-h-[297mm] shadow-xl print:shadow-none print:m-0 print:w-full print:h-auto print:min-h-0 print:p-8">
         {ledgerMode === 'photocopy' ? (
             <div className="font-bold text-center mb-4 text-lg underline">
                 List of Candidate
@@ -190,27 +188,22 @@ const Ledger: React.FC<LedgerProps> = ({ students, onBack, collegeAddresses = []
 
         <table className="w-full border-collapse border border-black text-sm text-black">
             <thead>
-                <tr className="text-center bg-gray-100 print:bg-gray-200">
-                    <th className="border border-black p-2 w-16 align-top font-bold text-black">Sr.<br/>No.</th>
-                    <th className="border border-black p-2 w-24 align-top font-bold text-black">Year</th>
-                    
-                    {/* Adjusted width for Photocopy mode */}
-                    <th className={`border border-black p-2 align-top font-bold text-black ${ledgerMode === 'photocopy' ? 'w-96' : ''}`}>Name of Student</th>
-                    
-                    <th className="border border-black p-2 w-32 align-top font-bold text-black">Seat No.</th>
-                    
-                    {/* Adjusted width for Photocopy mode */}
-                    <th className={`border border-black p-2 align-top font-bold text-black ${ledgerMode === 'photocopy' ? 'w-32' : 'w-1/3'}`}>Subject</th>
+                <tr className="text-center">
+                    <th className="border border-black p-2 w-12 align-middle font-bold text-black">Sr.<br/>No.</th>
+                    <th className="border border-black p-2 w-16 align-middle font-bold text-black">Year</th>
+                    <th className="border border-black p-2 w-24 align-middle font-bold text-black">Seat No.</th>
+                    <th className={`border border-black p-2 align-middle font-bold text-black ${ledgerMode === 'photocopy' ? 'w-96' : ''}`}>Studnts Name</th>
+                    <th className={`border border-black p-2 align-middle font-bold text-black ${ledgerMode === 'photocopy' ? 'w-32' : 'w-1/3'}`}>Subject</th>
                     
                     {ledgerMode === 'photocopy' ? (
                         <>
-                            <th className="border border-black p-2 w-24 align-top font-bold text-black">Answer<br/>Books</th>
-                            <th className="border border-black p-2 w-24 align-top font-bold text-black">Mark Slip</th>
+                            <th className="border border-black p-2 w-24 align-middle font-bold text-black">Answer<br/>Books</th>
+                            <th className="border border-black p-2 w-24 align-middle font-bold text-black">Mark Slip</th>
                         </>
                     ) : (
                         <>
-                            <th className="border border-black p-2 w-20 align-top font-bold text-black">T/R<br/>P/R</th>
-                            <th className="border border-black p-2 w-32 align-top font-bold text-black">Remark<br/>Change/<br/>No Change</th>
+                            <th className="border border-black p-2 w-16 align-middle font-bold text-black">T/R<br/>P/R</th>
+                            <th className="border border-black p-2 w-24 align-middle font-bold text-black">Remark<br/>Change/<br/>No Change</th>
                         </>
                     )}
                 </tr>
@@ -228,12 +221,12 @@ const Ledger: React.FC<LedgerProps> = ({ students, onBack, collegeAddresses = []
                         const totalMarkSlips = rowData.reduce((sum, r) => sum + r.markSlips, 0);
 
                         return (
-                            <tr key={student.id} className="text-black">
+                            <tr key={student.id} className="text-black h-16">
                                 <td className="border border-black p-2 text-center font-bold align-middle text-black">{idx + 1}</td>
                                 <td className="border border-black p-2 text-center font-bold align-middle text-black">{yearDisplay}</td>
-                                <td className="border border-black p-2 font-bold align-middle uppercase text-black">{student.studentName}</td>
                                 <td className="border border-black p-2 text-center font-bold align-middle text-black">{student.seatNo}</td>
-                                <td className="border border-black p-2 font-bold align-middle text-black">
+                                <td className="border border-black p-2 font-bold align-middle text-black capitalize">{student.studentName}</td>
+                                <td className="border border-black p-2 font-medium align-middle text-black">
                                     {subjectDisplay.map((sub, i) => <div key={i}>{sub}</div>)}
                                 </td>
                                 {ledgerMode === 'photocopy' ? (
@@ -260,11 +253,14 @@ const Ledger: React.FC<LedgerProps> = ({ students, onBack, collegeAddresses = []
             </tbody>
         </table>
         {ledgerMode === 'tr_pr' && (
-            <div className="mt-4 text-sm font-bold text-black">
+            <div className="mt-4 text-sm text-black">
                 <p>T/R= Theory Retotaling.</p>
                 <p>P/R= Practical Retotalings.</p>
             </div>
         )}
+        <div className="fixed bottom-4 right-8 print:block hidden">
+             <p className="text-right text-xs">Page 1</p>
+        </div>
     </div>
   );
 
@@ -273,11 +269,9 @@ const Ledger: React.FC<LedgerProps> = ({ students, onBack, collegeAddresses = []
       return (
           <div className="print:block bg-white text-black">
               {colleges.map((college, idx) => {
-                  // Find address for this specific college in the loop
                   const addrRecord = collegeAddresses.find(r => r.collegeCode === college.code);
                   const addr = addrRecord ? addrRecord.address : undefined;
 
-                  // Filter Students for Print View
                   const printPaidStudents = college.students.filter(s => s.pendingFees <= 0);
                   const printUnpaidStudents = college.students.filter(s => s.pendingFees > 0);
                   const printPaidAnythingStudents = college.students.filter(s => s.studentPayFees > 0);
@@ -292,16 +286,15 @@ const Ledger: React.FC<LedgerProps> = ({ students, onBack, collegeAddresses = []
                                 collegeAddress={addr}
                                 settings={letterSettings}
                                 examName={currentExamName}
-                                onBack={() => {}} // No back action in print mode
+                                onBack={() => {}}
                             >
-                                {/* Only Render Table for PAID students */}
                                 {renderResultTable(printPaidStudents, college.name, college.code)}
                             </CoverLetter>
                         )}
                         {viewMode === 'DISCREPANCY_TR' && (
                             <DiscrepancyLetter
                                 mode="TR_PR"
-                                students={printUnpaidStudents} // Only UNPAID students
+                                students={printUnpaidStudents}
                                 collegeName={college.name}
                                 collegeCode={college.code}
                                 collegeAddress={addr}
@@ -313,7 +306,7 @@ const Ledger: React.FC<LedgerProps> = ({ students, onBack, collegeAddresses = []
                         {viewMode === 'DISCREPANCY_PHOTO' && (
                             <DiscrepancyLetter
                                 mode="PHOTOCOPY"
-                                students={printUnpaidStudents} // Only UNPAID students
+                                students={printUnpaidStudents}
                                 collegeName={college.name}
                                 collegeCode={college.code}
                                 collegeAddress={addr}
@@ -369,7 +362,6 @@ const Ledger: React.FC<LedgerProps> = ({ students, onBack, collegeAddresses = []
             examName={currentExamName}
             onBack={() => setViewMode('LEDGER')}
         >
-            {/* Show only PAID students in Cover Letter */}
             {renderResultTable(paidStudents, collegeName, collegeCode)}
         </CoverLetter>
     );
@@ -379,7 +371,7 @@ const Ledger: React.FC<LedgerProps> = ({ students, onBack, collegeAddresses = []
     return (
       <DiscrepancyLetter
         mode="TR_PR"
-        students={unpaidStudents} // Show only UNPAID students
+        students={unpaidStudents}
         collegeName={collegeName}
         collegeCode={collegeCode}
         collegeAddress={currentCollegeAddress}
@@ -394,7 +386,7 @@ const Ledger: React.FC<LedgerProps> = ({ students, onBack, collegeAddresses = []
     return (
       <DiscrepancyLetter
         mode="PHOTOCOPY"
-        students={unpaidStudents} // Show only UNPAID students
+        students={unpaidStudents}
         collegeName={collegeName}
         collegeCode={collegeCode}
         collegeAddress={currentCollegeAddress}
@@ -409,7 +401,7 @@ const Ledger: React.FC<LedgerProps> = ({ students, onBack, collegeAddresses = []
       return (
           <CreditNoteLetter
             mode={ledgerMode === 'tr_pr' ? 'TR_PR' : 'PHOTOCOPY'}
-            students={paidAnythingStudents} // Show students with payment details
+            students={paidAnythingStudents}
             collegeName={collegeName}
             collegeCode={collegeCode}
             collegeAddress={currentCollegeAddress}
@@ -529,13 +521,11 @@ const Ledger: React.FC<LedgerProps> = ({ students, onBack, collegeAddresses = []
         </div>
         
         <div className="flex flex-wrap gap-2 justify-end w-full xl:w-auto">
-             {/* New Send Mail Button */}
              <button onClick={() => setViewMode('MAIL_DASHBOARD')} className="px-3 py-2 rounded-lg bg-teal-600 hover:bg-teal-500 text-white text-xs font-medium transition-colors shadow-lg flex items-center gap-2 border border-teal-400">
                 <Send size={14} /> Send Mail Data
             </button>
             <div className="w-px h-8 bg-slate-600 mx-1"></div>
              
-             {/* Credit Note Button */}
              <button onClick={() => setViewMode('CREDIT_NOTE')} className="px-3 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-xs font-medium transition-colors shadow-lg flex items-center gap-2">
                 <Receipt size={14} /> Credit Note
             </button>
@@ -565,7 +555,7 @@ const Ledger: React.FC<LedgerProps> = ({ students, onBack, collegeAddresses = []
       </div>
 
       <div className="p-2 md:p-8 print:p-0 w-full overflow-x-auto text-black print:text-[10px]">
-        {/* Ledger Matrix Table (Same as before) */}
+        {/* Ledger Matrix Table */}
         <div className="border border-black mb-0 text-black text-center p-1 font-bold">
             <h1 className="text-xl">MAHARASHTRA UNIVERSITY OF HEALTH SCIENCES, NASHIK</h1>
             <h2 className="text-lg">THEORY PAPER RE-TOTALING/VERYFICATION ({currentExamName}) EXAMINATION</h2>
@@ -582,25 +572,27 @@ const Ledger: React.FC<LedgerProps> = ({ students, onBack, collegeAddresses = []
         </div>
 
         <table className="w-full border-collapse border-l border-r border-b border-black text-xs leading-tight text-black">
+          {/* ... Table Header and Body (Unchanged logic, just structure) ... */}
           <thead>
             <tr className="border-b border-black">
               <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-10 bg-white print:bg-white text-black p-1">SR.<br/>NO.</th>
               <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-12 rotate-180 [writing-mode:vertical-rl] text-center bg-white print:bg-white text-black p-1">Inward<br/>No. &<br/>Date</th>
               <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-24 rotate-180 [writing-mode:vertical-rl] text-center bg-white print:bg-white text-black p-1">Seat No.</th>
-              <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black min-w-[200px] bg-white print:bg-white text-lg text-black p-2">Students Name</th>
+              <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black min-w-[180px] bg-white print:bg-white text-lg text-black p-2">Students Name</th>
               <th colSpan={1 + (maxSubjects * paperCols)} className="border-r border-black p-1 bg-white print:bg-white text-black font-bold text-base h-[30px]">Subject Applied for</th>
               <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-10 rotate-180 text-center [writing-mode:vertical-rl] px-1 bg-white print:bg-white text-black font-bold">Total sub.</th>
-              <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-16 rotate-180 text-center [writing-mode:vertical-rl] bg-white print:bg-white text-black font-bold">Total fees</th>
-              <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-16 rotate-180 text-center [writing-mode:vertical-rl] px-1 bg-white print:bg-white text-black font-bold">Pending fees if<br/>Fee Less Exess</th>
-              <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-16 rotate-180 text-center [writing-mode:vertical-rl] px-1 bg-white print:bg-white text-black font-bold">Student pay fees</th>
-              <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-16 rotate-180 text-center [writing-mode:vertical-rl] px-1 bg-white print:bg-white text-black font-bold">DD.NO.\<br/>Online Payment</th>
-              <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-16 rotate-180 text-center [writing-mode:vertical-rl] px-1 bg-white print:bg-white text-black font-bold">D.D. DATE \<br/>Online RS. Date</th>
-              <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-16 bg-white print:bg-white text-black font-bold p-1">Bank</th>
-              <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-16 rotate-180 text-center [writing-mode:vertical-rl] px-1 bg-white print:bg-white text-black font-bold">Dispatch Date /<br/>Send To College Mail</th>
-              <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-16 rotate-180 text-center [writing-mode:vertical-rl] px-1 bg-white print:bg-white text-black font-bold">TOTAL FEES RECEIVED</th>
+              
+              <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-20 rotate-180 text-center [writing-mode:vertical-rl] bg-white print:bg-white text-black font-bold">Total fees</th>
+              <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-20 rotate-180 text-center [writing-mode:vertical-rl] px-1 bg-white print:bg-white text-black font-bold">Pending fees if<br/>Fee Less Exess</th>
+              <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-20 rotate-180 text-center [writing-mode:vertical-rl] px-1 bg-white print:bg-white text-black font-bold">Student pay fees</th>
+              <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-24 rotate-180 text-center [writing-mode:vertical-rl] px-1 bg-white print:bg-white text-black font-bold">DD.NO.\<br/>Online Payment</th>
+              <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-24 rotate-180 text-center [writing-mode:vertical-rl] px-1 bg-white print:bg-white text-black font-bold">D.D. DATE \<br/>Online RS. Date</th>
+              <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-24 bg-white print:bg-white text-black font-bold p-1">Bank</th>
+              <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-24 rotate-180 text-center [writing-mode:vertical-rl] px-1 bg-white print:bg-white text-black font-bold">Dispatch Date /<br/>Send To College Mail</th>
+              <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-24 rotate-180 text-center [writing-mode:vertical-rl] px-1 bg-white print:bg-white text-black font-bold">TOTAL FEES RECEIVED</th>
               <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-10 rotate-180 text-center [writing-mode:vertical-rl] px-1 bg-white print:bg-white text-black font-bold">Checked By</th>
-              <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-12 rotate-180 text-center [writing-mode:vertical-rl] px-1 bg-white print:bg-white text-black font-bold">Signature of I/C Faculty</th>
-              <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-12 rotate-180 text-center [writing-mode:vertical-rl] px-1 bg-white print:bg-white text-black font-bold">Signature of Finance for D.D.<br/>Received</th>
+              <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-16 rotate-180 text-center [writing-mode:vertical-rl] px-1 bg-white print:bg-white text-black font-bold">Signature of I/C Faculty</th>
+              <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-16 rotate-180 text-center [writing-mode:vertical-rl] px-1 bg-white print:bg-white text-black font-bold">Signature of Finance for D.D.<br/>Received</th>
               <th rowSpan={SUBJECT_CONFIG.length + 2} className="w-16 rotate-180 text-center [writing-mode:vertical-rl] px-1 bg-white print:bg-white text-black font-bold">Remark Dispatch Details</th>
             </tr>
             {SUBJECT_CONFIG.map((year, i) => (
@@ -624,27 +616,51 @@ const Ledger: React.FC<LedgerProps> = ({ students, onBack, collegeAddresses = []
           <tbody className="text-black">
              {currentStudents.map((student, index) => {
                 const studentYear = getStudentYear(student);
+                const payments = student.payments || (student.studentPayFees > 0 ? [{
+                     amount: student.studentPayFees,
+                     ddNo: student.ddNo,
+                     ddDate: student.ddDate,
+                     bankName: student.bankName
+                }] : []);
+                
                 return (
                     <tr key={student.id} className="border-b border-black hover:bg-gray-50 print:hover:bg-transparent">
-                        <td className="border-r border-black text-center font-bold py-1">{index + 1}</td>
-                        <td className="border-r border-black text-center"><div className="font-bold leading-tight">{student.inwardNo}</div><div className="text-[9px] leading-tight">{student.inwardDate.split('-').reverse().join('-')}</div></td>
-                        <td className="border-r border-black text-center font-bold font-mono">{student.seatNo}</td>
-                        <td className="border-r border-black px-2 font-bold uppercase whitespace-nowrap">{student.studentName}</td>
-                        <td className="border-r border-black text-center font-bold text-[10px] whitespace-nowrap bg-gray-50 print:bg-transparent">{studentYear}</td>
+                        <td className="border-r border-black text-center font-bold py-1 align-top">{index + 1}</td>
+                        <td className="border-r border-black text-center align-top"><div className="font-bold leading-tight">{student.inwardNo}</div><div className="text-[9px] leading-tight">{student.inwardDate.split('-').reverse().join('-')}</div></td>
+                        <td className="border-r border-black text-center font-bold font-mono align-top">{student.seatNo}</td>
+                        <td className="border-r border-black px-2 font-bold uppercase whitespace-nowrap align-top">{student.studentName}</td>
+                        <td className="border-r border-black text-center font-bold text-[10px] whitespace-nowrap bg-gray-50 print:bg-transparent align-top">{studentYear}</td>
                         {Array.from({ length: maxSubjects }).map((_, slotIdx) => <React.Fragment key={slotIdx}>{renderCellChecks(student, slotIdx)}</React.Fragment>)}
-                        <td className="border-r border-black text-center font-bold">{student.totalSubjects}</td>
-                        <td className="border-r border-black text-right px-1 font-bold">₹ {student.totalFees.toLocaleString()}</td>
-                        <td className="border-r border-black text-right px-1 font-bold text-red-600">{student.pendingFees !== 0 ? `-₹ ${Math.abs(student.pendingFees)}` : '₹ 0'}</td>
-                        <td className="border-r border-black text-right px-1 font-bold">₹ {student.studentPayFees.toLocaleString()}</td>
-                        <td className="border-r border-black px-1 text-center font-mono text-[10px] break-all">{student.ddNo}</td>
-                        <td className="border-r border-black px-1 text-center text-[10px]">{student.ddDate ? student.ddDate.split('-').reverse().join('-') : ''}</td>
-                        <td className="border-r border-black px-1 text-center text-[10px] break-all">{student.bankName}</td>
-                        <td className="border-r border-black px-1 text-center text-[10px]">{student.dispatchDate}</td>
-                        <td className="border-r border-black px-1 text-right font-bold">{student.totalFeesReceived > 0 ? `₹ ${student.totalFeesReceived.toLocaleString()}` : ''}</td>
-                        <td className="border-r border-black px-1 text-center text-[10px]">{student.checkedBy}</td>
-                        <td className="border-r border-black px-1"></td>
-                        <td className="border-r border-black px-1"></td>
-                        <td className="px-1 text-center text-[10px]">{student.remark}</td>
+                        <td className="border-r border-black text-center font-bold align-top">{student.totalSubjects}</td>
+                        <td className="border-r border-black text-right px-1 font-bold align-top whitespace-nowrap">₹ {student.totalFees.toLocaleString()}</td>
+                        <td className="border-r border-black text-right px-1 font-bold text-red-600 align-top whitespace-nowrap">{student.pendingFees !== 0 ? `-₹ ${Math.abs(student.pendingFees)}` : '₹ 0'}</td>
+                        <td className="border-r border-black text-right px-1 font-bold align-top whitespace-nowrap">
+                             {payments.map((p, idx) => (
+                                 <div key={idx} className={idx > 0 ? 'border-t border-gray-300 mt-1 pt-1' : ''}>₹ {Number(p.amount).toLocaleString()}</div>
+                             ))}
+                             {payments.length === 0 && '₹ 0'}
+                        </td>
+                        <td className="border-r border-black px-1 text-center font-mono text-[10px] align-top whitespace-nowrap">
+                             {payments.map((p, idx) => (
+                                 <div key={idx} className={idx > 0 ? 'border-t border-gray-300 mt-1 pt-1' : ''}>{p.ddNo}</div>
+                             ))}
+                        </td>
+                        <td className="border-r border-black px-1 text-center text-[10px] align-top whitespace-nowrap">
+                             {payments.map((p, idx) => (
+                                 <div key={idx} className={idx > 0 ? 'border-t border-gray-300 mt-1 pt-1' : ''}>{p.ddDate ? p.ddDate.split('-').reverse().join('-') : ''}</div>
+                             ))}
+                        </td>
+                        <td className="border-r border-black px-1 text-center text-[10px] align-top whitespace-nowrap">
+                             {payments.map((p, idx) => (
+                                 <div key={idx} className={idx > 0 ? 'border-t border-gray-300 mt-1 pt-1' : ''}>{p.bankName}</div>
+                             ))}
+                        </td>
+                        <td className="border-r border-black px-1 text-center text-[10px] align-top whitespace-nowrap">{student.dispatchDate}</td>
+                        <td className="border-r border-black px-1 text-right font-bold align-top whitespace-nowrap">{student.totalFeesReceived > 0 ? `₹ ${student.totalFeesReceived.toLocaleString()}` : ''}</td>
+                        <td className="border-r border-black px-1 text-center text-[10px] align-top">{student.checkedBy}</td>
+                        <td className="border-r border-black px-1 align-top"></td>
+                        <td className="border-r border-black px-1 align-top"></td>
+                        <td className="px-1 text-center text-[10px] align-top">{student.remark}</td>
                     </tr>
                 );
              })}
@@ -655,11 +671,11 @@ const Ledger: React.FC<LedgerProps> = ({ students, onBack, collegeAddresses = []
                 <td className="border-r border-black"></td>
                 {matrixTotals.map((total, idx) => <td key={idx} className="border-r border-black text-center text-[10px]">{total}</td>)}
                 <td className="border-r border-black text-center">{totalSubSum}</td>
-                <td className="border-r border-black text-right px-1">₹ {totalFeesSum.toLocaleString()}</td>
-                <td className="border-r border-black text-right px-1 text-red-600">₹ {totalPendingSum.toLocaleString()}</td>
-                <td className="border-r border-black text-right px-1">₹ {totalPaidSum.toLocaleString()}</td>
+                <td className="border-r border-black text-right px-1 whitespace-nowrap">₹ {totalFeesSum.toLocaleString()}</td>
+                <td className="border-r border-black text-right px-1 text-red-600 whitespace-nowrap">₹ {totalPendingSum.toLocaleString()}</td>
+                <td className="border-r border-black text-right px-1 whitespace-nowrap">₹ {totalPaidSum.toLocaleString()}</td>
                 <td colSpan={4} className="border-r border-black"></td>
-                <td className="border-r border-black text-right px-1">₹ {totalReceivedSum.toLocaleString()}</td>
+                <td className="border-r border-black text-right px-1 whitespace-nowrap">₹ {totalReceivedSum.toLocaleString()}</td>
                 <td className="border-r border-black"></td>
                 <td className="border-r border-black"></td>
                 <td className="border-r border-black"></td>
@@ -673,7 +689,10 @@ const Ledger: React.FC<LedgerProps> = ({ students, onBack, collegeAddresses = []
         @media print {
             @page {
                 size: A3 landscape;
-                margin: 5mm;
+                margin-top: 10mm;
+                margin-bottom: 10mm;
+                margin-left: 25.4mm;
+                margin-right: 12.7mm;
             }
             body {
                 background-color: white;

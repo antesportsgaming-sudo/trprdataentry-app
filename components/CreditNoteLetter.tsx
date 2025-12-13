@@ -52,16 +52,10 @@ const CreditNoteLetter: React.FC<CreditNoteLetterProps> = ({
   const photoCount = photoStudents.length;
   const totalStudentsCount = students.length;
 
-  // 3. Calculate Amounts (Using studentPayFees as the amount being submitted)
-  // We assume Row 11/12 represents the collected fee being submitted via DDs.
+  // 3. Calculate Amounts
   const trPrAmount = trPrStudents.reduce((sum, s) => sum + (s.studentPayFees || 0), 0);
   const photoAmount = photoStudents.reduce((sum, s) => sum + (s.studentPayFees || 0), 0);
   
-  // Row 20/21 logic: In this basic version, we'll map the actual payments to the main heads 
-  // to ensure the Total matches the DD list. 
-  // If strict accounting of "Excess" is needed separate from "Fee", logic would be: 
-  // Paid = Fee + Excess - Short. 
-  // For this form, "Amount" typically means the amount enclosed.
   const excessAmount = 0; // Placeholder for Row 20
   const lessAmount = 0;   // Placeholder for Row 21
 
@@ -95,15 +89,9 @@ const CreditNoteLetter: React.FC<CreditNoteLetterProps> = ({
 
   const totalAmountWords = numberToWords(totalAmount).trim() + " Only";
 
-  // Filter out students with 0 payment for the DD list? 
-  // Usually all selected students should be listed, but only valid DDs shown.
-  // We will list all students who have payment details.
   const studentsWithPayments = students.filter(s => s.studentPayFees > 0 || s.ddNo);
-
-  // Logic for Ledger Sr. Nos (1, 2, 3...)
   const srNosString = studentsWithPayments.map((_, i) => i + 1).join(', ');
 
-  // Logic for Student Name Display
   const isSingleStudent = totalStudentsCount === 1;
   const studentDisplayValue = isSingleStudent ? students[0].studentName.toUpperCase() : totalStudentsCount;
 
@@ -128,14 +116,32 @@ const CreditNoteLetter: React.FC<CreditNoteLetterProps> = ({
       {/* A4 Page */}
       <div className="max-w-[210mm] mx-auto bg-white min-h-[297mm] p-[10mm] shadow-xl print:shadow-none print:m-0 print:w-full print:h-auto print:min-h-0 print:p-4">
         
-        {/* Header Section */}
-        <div className="text-center mb-4">
-            <h1 className="text-lg font-bold underline uppercase tracking-wide text-black">MAHARASHTRA UNIVERSITY OF HEALTH SCIENCES , NASHIK</h1>
-            <div className="mt-1 font-bold text-black">
-                <span className="underline">Exam Section</span> <span className="underline ml-2">{currentExamName}</span>
-            </div>
-            {/* Removed uppercase class to allow 'DDs' to be displayed correctly */}
-            <h2 className="text-lg font-bold mt-2 underline text-black">SUBMISSION OF DDs TO FINANCE SECTION</h2>
+        {/* Header Section with Logo Left & Address Center */}
+        <div className="flex items-start justify-center gap-4 mb-4">
+             {/* Logo */}
+             {settings?.universityLogo ? (
+                <div className="w-24 h-24 flex-shrink-0">
+                    <img 
+                        src={settings.universityLogo} 
+                        alt="University Logo" 
+                        className="w-full h-full object-contain" 
+                    />
+                </div>
+             ) : (
+                <div className="w-24 h-24 flex-shrink-0 border border-gray-300 flex items-center justify-center text-xs text-gray-400 print:hidden">No Logo</div>
+             )}
+
+             {/* University Details */}
+             <div className="text-center flex-1">
+                <h1 className="text-xl font-bold uppercase tracking-wide text-black mb-1 leading-none">MAHARASHTRA UNIVERSITY OF HEALTH SCIENCES, NASHIK</h1>
+                <p className="text-sm font-bold text-black leading-tight">दिंडोरी रोड, म्हसरूळ, नाशिक - ४२२००४ Dindori Road, Mhasrul, Nashik - 422004</p>
+                
+                <div className="mt-2 font-bold text-black">
+                    <span className="underline">Exam Section</span> <span className="underline ml-2">{currentExamName.replace(/_/g, ' ')}</span>
+                </div>
+                
+                <h2 className="text-lg font-bold mt-2 underline text-black">SUBMISSION OF DDs TO FINANCE SECTION</h2>
+             </div>
         </div>
 
         {/* College & Faculty Info */}
@@ -144,8 +150,8 @@ const CreditNoteLetter: React.FC<CreditNoteLetterProps> = ({
                 <p>College Code & Name</p>
             </div>
             <div className="flex justify-between items-end">
-                <div className="text-xl pl-8">{collegeCode}</div>
-                <div className="text-xl pr-8 uppercase flex-1 text-center">{collegeName}</div>
+                <div className="pl-8">{collegeCode}</div>
+                <div className="pr-8 uppercase flex-1 text-center">{collegeName}</div>
             </div>
             
             <div className="mt-4 flex justify-between items-center border border-black p-2">
@@ -270,7 +276,6 @@ const CreditNoteLetter: React.FC<CreditNoteLetterProps> = ({
                         ))
                     )}
                     
-                    {/* Fill empty rows to look like the form if needed, or just total */}
                     {Array.from({ length: Math.max(0, 5 - studentsWithPayments.length) }).map((_, i) => (
                         <tr key={`empty-${i}`} className="h-8">
                             <td className="border border-black"></td>
@@ -301,7 +306,7 @@ const CreditNoteLetter: React.FC<CreditNoteLetterProps> = ({
         @media print {
             @page {
                 size: A4;
-                margin: 0.5cm;
+                margin: 0;
             }
             body {
                 background-color: white;
