@@ -42,15 +42,22 @@ const CreditNoteLetter: React.FC<CreditNoteLetterProps> = ({
   };
 
   // --- Calculations ---
+
+  // Filter to exclude Online Payments (Only Physical DDs/RTGS should be in Credit Note)
+  const physicalStudents = students.filter(s => {
+      const bank = (s.bankName || '').toUpperCase();
+      // Exclude if it is strictly Online Payment or contains it
+      return !bank.includes('ONLINE PAYMENT');
+  });
   
-  // 1. Separate students by type
-  const trPrStudents = students.filter(s => s.entryType === 'tr_pr');
-  const photoStudents = students.filter(s => s.entryType === 'photocopy');
+  // 1. Separate students by type (using filtered list)
+  const trPrStudents = physicalStudents.filter(s => s.entryType === 'tr_pr');
+  const photoStudents = physicalStudents.filter(s => s.entryType === 'photocopy');
 
   // 2. Calculate Counts
   const trPrCount = trPrStudents.length;
   const photoCount = photoStudents.length;
-  const totalStudentsCount = students.length;
+  const totalStudentsCount = physicalStudents.length;
 
   // 3. Calculate Amounts
   const trPrAmount = trPrStudents.reduce((sum, s) => sum + (s.studentPayFees || 0), 0);
@@ -89,11 +96,11 @@ const CreditNoteLetter: React.FC<CreditNoteLetterProps> = ({
 
   const totalAmountWords = numberToWords(totalAmount).trim() + " Only";
 
-  const studentsWithPayments = students.filter(s => s.studentPayFees > 0 || s.ddNo);
+  const studentsWithPayments = physicalStudents.filter(s => s.studentPayFees > 0 || s.ddNo);
   const srNosString = studentsWithPayments.map((_, i) => i + 1).join(', ');
 
   const isSingleStudent = totalStudentsCount === 1;
-  const studentDisplayValue = isSingleStudent ? students[0].studentName.toUpperCase() : totalStudentsCount;
+  const studentDisplayValue = isSingleStudent ? physicalStudents[0].studentName.toUpperCase() : totalStudentsCount;
 
   return (
     <div className="min-h-screen bg-gray-100 font-serif text-black">
@@ -263,7 +270,7 @@ const CreditNoteLetter: React.FC<CreditNoteLetterProps> = ({
                 </thead>
                 <tbody>
                     {studentsWithPayments.length === 0 ? (
-                        <tr><td colSpan={5} className="border border-black p-4 text-center">No Payments Recorded</td></tr>
+                        <tr><td colSpan={5} className="border border-black p-4 text-center">No Physical Payments (DD/RTGS) Recorded</td></tr>
                     ) : (
                         studentsWithPayments.map((student, idx) => (
                             <tr key={student.id}>
