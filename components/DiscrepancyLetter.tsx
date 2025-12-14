@@ -34,6 +34,54 @@ const DiscrepancyLetter: React.FC<DiscrepancyLetterProps> = ({
   // Generate the repeating MUHS string
   const muhsString = Array(350).fill("MUHS").join("");
 
+  // Helper to calculate TR/PR status and Subjects string
+  const getStudentData = (student: StudentEntry) => {
+    const subjects: string[] = [];
+    let isTr = false;
+    let isPr = false;
+
+    student.years.forEach(year => {
+        year.subjects.forEach(sub => {
+            const p = sub.papers;
+            // Check if any paper is selected for this subject
+            const hasSelection = p.I || p.II || p.PR || p.markSlipI || p.markSlipII;
+            
+            if (hasSelection) {
+                // Build the suffix string based on selection (e.g., -I-II)
+                // Note: PR is intentionally EXCLUDED from the subject string as per user request
+                const parts = [];
+                if (p.I) parts.push('I');
+                if (p.II) parts.push('II');
+                
+                if (p.markSlipI) parts.push('MS-I');
+                if (p.markSlipII) parts.push('MS-II');
+
+                const suffix = parts.length > 0 ? `-${parts.join('-')}` : '';
+                
+                // Show Full Subject Name + Suffix (without PR)
+                subjects.push(`${sub.subjectName}${suffix}`);
+                
+                if (p.I || p.II) isTr = true;
+                if (p.PR) isPr = true;
+            }
+        });
+    });
+
+    let trPrStatus = '-';
+    if (mode === 'PHOTOCOPY') {
+        trPrStatus = 'PHOTO'; // For Photocopy mode
+    } else {
+        if (isTr && isPr) trPrStatus = 'TR/PR';
+        else if (isTr) trPrStatus = 'TR';
+        else if (isPr) trPrStatus = 'PR';
+    }
+
+    return {
+        subjectString: subjects.join(', '),
+        trPrStatus
+    };
+  };
+
   return (
     <div className="min-h-screen bg-gray-100 text-black font-serif relative">
       <div className="print:hidden bg-slate-800 text-white px-6 py-4 flex justify-between items-center sticky top-0 z-20 shadow-md">
@@ -154,26 +202,33 @@ const DiscrepancyLetter: React.FC<DiscrepancyLetterProps> = ({
             <table className="w-full border-collapse border border-black text-sm text-black mb-4 mt-4">
                 <thead>
                     <tr className="bg-gray-100 print:bg-gray-200 text-center font-bold">
-                        <th className="border border-black p-2 w-12">Sr.</th>
+                        <th className="border border-black p-2 w-10">Sr.</th>
                         <th className="border border-black p-2">Student Name</th>
-                        <th className="border border-black p-2 w-24">Seat No</th>
-                        <th className="border border-black p-2 w-24">Amount Pending</th>
-                        <th className="border border-black p-2">Remark</th>
+                        <th className="border border-black p-2 w-20">Seat No</th>
+                        <th className="border border-black p-2 w-32">Subject</th>
+                        <th className="border border-black p-2 w-16">TR/PR</th>
+                        <th className="border border-black p-2 w-48">Discrepancy</th>
                     </tr>
                 </thead>
                 <tbody>
                     {students.length === 0 ? (
-                        <tr><td colSpan={5} className="border border-black p-4 text-center">No Discrepancies Found</td></tr>
+                        <tr><td colSpan={6} className="border border-black p-4 text-center">No Discrepancies Found</td></tr>
                     ) : (
-                        students.map((s, idx) => (
-                            <tr key={s.id}>
-                                <td className="border border-black p-2 text-center">{idx + 1}</td>
-                                <td className="border border-black p-2">{s.studentName}</td>
-                                <td className="border border-black p-2 text-center">{s.seatNo}</td>
-                                <td className="border border-black p-2 text-right font-bold text-red-600">₹ {s.pendingFees}</td>
-                                <td className="border border-black p-2">{s.remark}</td>
-                            </tr>
-                        ))
+                        students.map((s, idx) => {
+                            const { subjectString, trPrStatus } = getStudentData(s);
+                            return (
+                                <tr key={s.id}>
+                                    <td className="border border-black p-2 text-center">{idx + 1}</td>
+                                    <td className="border border-black p-2 font-bold">{s.studentName}</td>
+                                    <td className="border border-black p-2 text-center">{s.seatNo}</td>
+                                    <td className="border border-black p-2 text-center">{subjectString}</td>
+                                    <td className="border border-black p-2 text-center font-bold">{trPrStatus}</td>
+                                    <td className="border border-black p-2 text-center font-bold text-red-700">
+                                        Less Fees {s.pendingFees} /- Payment Receipt Pending
+                                    </td>
+                                </tr>
+                            );
+                        })
                     )}
                 </tbody>
             </table>

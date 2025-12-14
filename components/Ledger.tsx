@@ -415,7 +415,7 @@ const Ledger: React.FC<LedgerProps> = ({ students, onBack, collegeAddresses = []
   // --- Detailed Ledger View Logic (Main Matrix) ---
   const paperCols = ledgerMode === 'tr_pr' ? 3 : 4;
   const paperLabels = ledgerMode === 'tr_pr' ? ['I', 'II', 'PR'] : ['I', 'MS', 'II', 'MS'];
-  const maxSubjects = Math.max(...SUBJECT_CONFIG.map(y => y.subjects.length));
+  const maxSubjects = Math.max(...SUBJECT_CONFIG.map(y => y.subjects.length)) || 0;
   
   const getStudentYear = (student: StudentEntry): string => {
       for (const year of student.years) {
@@ -458,6 +458,8 @@ const Ledger: React.FC<LedgerProps> = ({ students, onBack, collegeAddresses = []
   };
 
   const totalMatrixCols = maxSubjects * paperCols;
+  const totalTableCols = 18 + totalMatrixCols; // 4 (Left) + 1 (Year) + Matrix + 13 (Right)
+  
   const matrixTotals = new Array(totalMatrixCols).fill(0);
 
   currentStudents.forEach(student => {
@@ -556,24 +558,30 @@ const Ledger: React.FC<LedgerProps> = ({ students, onBack, collegeAddresses = []
 
       <div className="p-2 md:p-8 print:p-0 w-full overflow-x-auto text-black print:text-[10px]">
         {/* Ledger Matrix Table */}
-        <div className="border border-black mb-0 text-black text-center p-1 font-bold">
-            <h1 className="text-xl">MAHARASHTRA UNIVERSITY OF HEALTH SCIENCES, NASHIK</h1>
-            <h2 className="text-lg">THEORY PAPER RE-TOTALING/VERYFICATION ({currentExamName}) EXAMINATION</h2>
-        </div>
-        <div className="border-l border-r border-b border-black mb-0 text-black">
-           <div className="flex bg-white print:bg-transparent">
-            <div className="p-1 border-r border-black font-bold text-base flex items-center">
-                C_Code:- {collegeCode}
-            </div>
-            <div className="flex-1 p-1 font-bold text-base flex items-center">
-              Name of College :- <span className="ml-2 uppercase">{collegeName} ({collegeCode})</span>
-            </div>
-          </div>
-        </div>
 
-        <table className="w-full border-collapse border-l border-r border-b border-black text-xs leading-tight text-black">
-          {/* ... Table Header and Body (Unchanged logic, just structure) ... */}
+        <table className="w-full border-collapse border border-black text-xs leading-tight text-black">
+          {/* ... Table Header and Body ... */}
           <thead>
+            {/* Header Rows inside the table to ensure they span full width */}
+            <tr className="print:table-row">
+                <th colSpan={totalTableCols} className="border border-black p-2 text-center bg-white print:bg-white">
+                    <h1 className="text-xl font-bold">MAHARASHTRA UNIVERSITY OF HEALTH SCIENCES, NASHIK</h1>
+                    <h2 className="text-lg font-bold">THEORY PAPER RE-TOTALING/VERYFICATION ({currentExamName}) EXAMINATION</h2>
+                </th>
+            </tr>
+            <tr className="print:table-row">
+                <th colSpan={totalTableCols} className="border-l border-r border-b border-black p-0 bg-white print:bg-white text-left align-middle">
+                    <div className="flex w-full items-stretch">
+                        <div className="p-2 border-r border-black font-bold text-base whitespace-nowrap flex items-center bg-gray-50 print:bg-white">
+                            C_Code:- {collegeCode}
+                        </div>
+                        <div className="p-2 font-bold text-base whitespace-nowrap flex-1 flex items-center">
+                             Name of College :- <span className="ml-2 uppercase">{collegeName} ({collegeCode})</span>
+                        </div>
+                    </div>
+                </th>
+            </tr>
+
             <tr className="border-b border-black">
               <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-10 bg-white print:bg-white text-black p-1">SR.<br/>NO.</th>
               <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-12 rotate-180 [writing-mode:vertical-rl] text-center bg-white print:bg-white text-black p-1">Inward<br/>No. &<br/>Date</th>
@@ -590,9 +598,9 @@ const Ledger: React.FC<LedgerProps> = ({ students, onBack, collegeAddresses = []
               <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-24 bg-white print:bg-white text-black font-bold p-1">Bank</th>
               <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-24 rotate-180 text-center [writing-mode:vertical-rl] px-1 bg-white print:bg-white text-black font-bold">Dispatch Date /<br/>Send To College Mail</th>
               <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-24 rotate-180 text-center [writing-mode:vertical-rl] px-1 bg-white print:bg-white text-black font-bold">TOTAL FEES RECEIVED</th>
-              <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-10 rotate-180 text-center [writing-mode:vertical-rl] px-1 bg-white print:bg-white text-black font-bold">Checked By</th>
-              <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-16 rotate-180 text-center [writing-mode:vertical-rl] px-1 bg-white print:bg-white text-black font-bold">Signature of I/C Faculty</th>
-              <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-16 rotate-180 text-center [writing-mode:vertical-rl] px-1 bg-white print:bg-white text-black font-bold">Signature of Finance for D.D.<br/>Received</th>
+              <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-32 rotate-180 text-center [writing-mode:vertical-rl] px-1 bg-white print:bg-white text-black font-bold">Checked By</th>
+              <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-48 rotate-180 text-center [writing-mode:vertical-rl] px-1 bg-white print:bg-white text-black font-bold">Signature of I/C Faculty</th>
+              <th rowSpan={SUBJECT_CONFIG.length + 2} className="border-r border-black w-32 rotate-180 text-center [writing-mode:vertical-rl] px-1 bg-white print:bg-white text-black font-bold">Signature of Finance for D.D.<br/>Received</th>
               <th rowSpan={SUBJECT_CONFIG.length + 2} className="w-16 rotate-180 text-center [writing-mode:vertical-rl] px-1 bg-white print:bg-white text-black font-bold">Remark Dispatch Details</th>
             </tr>
             {SUBJECT_CONFIG.map((year, i) => (
