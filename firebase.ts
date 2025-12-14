@@ -15,7 +15,7 @@ import {
     onSnapshot
 } from 'firebase/firestore';
 import { StudentEntry, MasterRecord, CollegeAddressRecord, LetterSettings, ArchivedSession } from '../types';
-import { SUBJECT_CONFIG } from '../constants';
+import { SUBJECT_CONFIG } from './constants';
 
 // Collection References
 const FACULTY_COLLECTION = 'faculties';
